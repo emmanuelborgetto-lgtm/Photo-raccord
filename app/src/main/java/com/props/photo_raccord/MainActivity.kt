@@ -1,5 +1,6 @@
 package com.props.photo_raccord
 
+import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
