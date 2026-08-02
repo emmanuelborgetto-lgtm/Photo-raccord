@@ -2,6 +2,7 @@ package com.props.photo_raccord.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewModelScope
 import com.props.photo_raccord.PhotoDao
 import com.props.photo_raccord.PhotoEntity
 import kotlinx.coroutines.Dispatchers

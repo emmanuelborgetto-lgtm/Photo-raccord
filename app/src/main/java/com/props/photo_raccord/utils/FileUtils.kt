@@ -8,9 +8,6 @@ import android.provider.DocumentsContract
 import android.provider.MediaStore
 import android.util.Log
 import androidx.core.net.toUri
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 fun saveImageToGallery(context: Context, bitmap: android.graphics.Bitmap, projet: String): String? {
     val safeProjet = projet.ifEmpty { "Projet" }
@@ -95,7 +92,7 @@ fun updatePhotoBanner(context: Context, photoUriString: String, projet: String, 
         val bannerHeight = totalHeight - photoHeight
         if (photoHeight <= 0 || bannerHeight <= 0) return
         val photoOnly = createBitmap(sourceBitmap, 0, 0, totalWidth, photoHeight)
-        val updatedBitmap = createBitmap(totalWidth, totalHeight)
+        val updatedBitmap = createBitmap(totalWidth, totalHeight, android.graphics.Bitmap.Config.ARGB_8888)
         val canvas = android.graphics.Canvas(updatedBitmap)
         canvas.drawBitmap(photoOnly, 0f, 0f, null)
         val paddingX = totalWidth * 0.02f

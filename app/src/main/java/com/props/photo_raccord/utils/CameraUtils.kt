@@ -15,6 +15,8 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.concurrent.Executor
+import androidx.core.graphics.createBitmap
+import androidx.core.graphics.withSave
 
 fun takeAndProcessPhoto(
     context: Context,
@@ -39,16 +41,16 @@ fun takeAndProcessPhoto(
             val finalWidth = if (isPortrait) bitmap.height else bitmap.width
             val finalHeight = if (isPortrait) bitmap.width else bitmap.height
             val bannerHeight = (finalHeight * 0.08f).toInt()
-            val finalBitmap = android.graphics.Bitmap.createBitmap(finalWidth, finalHeight + bannerHeight)
+            val finalBitmap = createBitmap(finalWidth, finalHeight + bannerHeight)
             val canvas = android.graphics.Canvas(finalBitmap)
-            canvas.save()
-            val matrix = android.graphics.Matrix().apply {
-                postTranslate(-bitmap.width / 2f, -bitmap.height / 2f)
-                postRotate(rotation)
-                postTranslate(finalWidth / 2f, finalHeight / 2f)
+            canvas.withSave {
+                val matrix = android.graphics.Matrix().apply {
+                    postTranslate(-bitmap.width / 2f, -bitmap.height / 2f)
+                    postRotate(rotation)
+                    postTranslate(finalWidth / 2f, finalHeight / 2f)
+                }
+                drawBitmap(bitmap, matrix, null)
             }
-            canvas.drawBitmap(bitmap, matrix, null)
-            canvas.restore()
             bitmap.recycle()
             val paddingX = finalWidth * 0.02f
             val textSizeTitle = finalWidth * 0.035f
@@ -95,7 +97,7 @@ fun takeAndProcessPhoto(
             } else {
                 mainExecutor.execute { onPhotoSaved("Erreur lors de la sauvegarde") }
             }
-            finalBitmap.recycle
+            finalBitmap.recycle()
         } catch (e: Throwable) {
             Log.e("CameraX", "Erreur traitement photo", e)
             mainExecutor.execute { onPhotoSaved("Erreur : ${e.message ?: "Inconnue"}") }
