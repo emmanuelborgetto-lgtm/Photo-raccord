@@ -88,7 +88,13 @@ fun SettingsScreen(currentTheme: String, onThemeChanged: (String) -> Unit, onPro
                 isCleaning = true
                 scope.launch(Dispatchers.IO) {
                     val allPhotos = photoDao.getAllPhotosOnce()
-                    val orphans = allPhotos.filter { photo -> try { val uri = photo.uri.toUri(); context.contentResolver.openInputStream(uri)?.use { true } ?: false } catch (_: Exception) { false }; !it }
+                    val orphans = allPhotos.filter { photo ->
+                        try {
+                            val uri = photo.uri.toUri()
+                            val exists = context.contentResolver.openInputStream(uri)?.use { true } ?: false
+                            !exists
+                        } catch (_: Exception) { true }
+                    }
                     if (orphans.isNotEmpty()) photoDao.deletePhotos(orphans)
                     withContext(Dispatchers.Main) { isCleaning = false; Toast.makeText(context, "${orphans.size} référence(s) orpheline(s) supprimée(s)", Toast.LENGTH_SHORT).show() }
                 }
