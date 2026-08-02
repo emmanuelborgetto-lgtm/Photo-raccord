@@ -18,6 +18,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.edit
 import com.props.photo_raccord.screens.CameraScreen
 import com.props.photo_raccord.screens.GalleryScreen
 import com.props.photo_raccord.screens.ProjectSelectionScreen
@@ -37,7 +38,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun PhotoRaccordApp() {
     val context = LocalContext.current
-    val prefs = remember { context.getSharedPreferences("photo_raccord_prefs", MODE_PRIVATE) }
+    val prefs = remember { context.getSharedPreferences("photo_raccord_prefs", Context.MODE_PRIVATE) }
     var currentTheme by remember { mutableStateOf(prefs.getString("app_theme", "DEFAULT") ?: "DEFAULT") }
 
     MaterialTheme(colorScheme = getColorScheme(currentTheme, context)) {

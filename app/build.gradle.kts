@@ -7,40 +7,38 @@ plugins {
 android {
     namespace = "com.props.photo_raccord"
     compileSdk {
-        version = release(37) { }
+        version = release(37) {
+        }
     }
 
     defaultConfig {
         applicationId = "com.props.photo_raccord"
         minSdk = 24
+        //noinspection OldTargetApi
         targetSdk = 36
         versionCode = 1
         versionName = "1.0"
+
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = true
-            isShrinkResources = true
-            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-        }
-        debug {
-            isMinifyEnabled = false
+            optimization {
+                enable = false
+            }
         }
     }
-
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
-
     buildFeatures {
         compose = true
     }
 }
 
 dependencies {
-    // Compose
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.compose.material3)
@@ -49,27 +47,37 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
+    testImplementation(libs.junit)
+    androidTestImplementation(platform(libs.androidx.compose.bom))
+    androidTestImplementation(libs.androidx.compose.ui.test.junit4)
+    androidTestImplementation(libs.androidx.espresso.core)
+    androidTestImplementation(libs.androidx.junit)
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
     debugImplementation(libs.androidx.compose.ui.tooling)
 
     // CameraX
-    val cameraxVersion = "1.6.1"
-    implementation("androidx.camera:camera-core:$cameraxVersion")
-    implementation("androidx.camera:camera-camera2:$cameraxVersion")
-    implementation("androidx.camera:camera-lifecycle:$cameraxVersion")
-    implementation("androidx.camera:camera-view:$cameraxVersion")
+    val camerax_version = "1.6.1"
+    implementation("androidx.camera:camera-core:${camerax_version}")
+    implementation("androidx.camera:camera-camera2:${camerax_version}")
+    implementation("androidx.camera:camera-lifecycle:${camerax_version}")
+    implementation("androidx.camera:camera-view:${camerax_version}")
 
-    // Room
+    // Room (Base de données locale)
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
 
-    // Permissions
+    // DataStore (Préférences)
+    implementation("androidx.datastore:datastore-preferences:1.2.1")
+
+    // Navigation Compose
+    implementation("androidx.navigation:navigation-compose:2.9.8")
+
     implementation("com.google.accompanist:accompanist-permissions:0.37.3")
 
-    // Image loading
+    // Galerie
     implementation("io.coil-kt:coil-compose:2.7.0")
 
-    // Icons
     implementation("androidx.compose.material:material-icons-core:1.7.8")
     implementation(libs.androidx.compose.material.icons.extended)
 }

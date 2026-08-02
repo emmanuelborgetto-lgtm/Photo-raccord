@@ -1,11 +1,13 @@
 package com.props.photo_raccord.utils
 
 import android.content.Context
+import android.graphics.Bitmap.createBitmap
 import android.net.Uri
 import android.os.Build
 import android.provider.DocumentsContract
 import android.provider.MediaStore
 import android.util.Log
+import androidx.core.net.toUri
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -92,8 +94,8 @@ fun updatePhotoBanner(context: Context, photoUriString: String, projet: String, 
         val photoHeight = (totalHeight / 1.08f).toInt()
         val bannerHeight = totalHeight - photoHeight
         if (photoHeight <= 0 || bannerHeight <= 0) return
-        val photoOnly = android.graphics.Bitmap.createBitmap(sourceBitmap, 0, 0, totalWidth, photoHeight)
-        val updatedBitmap = android.graphics.Bitmap.createBitmap(totalWidth, totalHeight)
+        val photoOnly = createBitmap(sourceBitmap, 0, 0, totalWidth, photoHeight)
+        val updatedBitmap = createBitmap(totalWidth, totalHeight)
         val canvas = android.graphics.Canvas(updatedBitmap)
         canvas.drawBitmap(photoOnly, 0f, 0f, null)
         val paddingX = totalWidth * 0.02f

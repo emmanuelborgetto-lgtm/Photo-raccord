@@ -21,6 +21,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.core.content.edit
+import androidx.core.net.toUri
 import com.props.photo_raccord.AppDatabase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
