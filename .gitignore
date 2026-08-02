@@ -1,3 +1,4 @@
+# Android
 *.iml
 .gradle
 /local.properties
@@ -7,9 +8,45 @@
 /.idea/workspace.xml
 /.idea/navEditor.xml
 /.idea/assetWizardSettings.xml
-.DS_Store
-/build
-/captures
-.externalNativeBuild
-.cxx
+
+# Android Studio
+.idea/
+*.iws
+*.ipr
+
+# Build outputs
+/build/
+/app/build/
+
+# Gradle
+gradle/
+gradle-daemon-jvm.properties
+
+# Local properties
 local.properties
+
+# Mac
+.DS_Store
+
+# Windows
+Thumbs.db
+
+# Logs
+*.log
+
+# Environment files
+.env
+
+# External native build
+.externalNativeBuild/
+.cxx/
+
+# Android Profiler
+captures/
+
+# Keystores
+*.jks
+*.keystore
+
+# Google Services
+google-services.json
