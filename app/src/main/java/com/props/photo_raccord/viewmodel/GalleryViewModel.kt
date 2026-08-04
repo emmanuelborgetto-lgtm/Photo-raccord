@@ -8,8 +8,8 @@ import com.props.photo_raccord.PhotoEntity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
@@ -28,6 +28,7 @@ enum class SortOption(val displayName: String) {
     DECOR_DESC("Décor Z-A")
 }
 
+@Suppress("RECEIVER_NULLABILITY_MISMATCH_BASED_ON_JAVA_ANNOTATIONS")
 class GalleryViewModel(private val photoDao: PhotoDao) : ViewModel() {
     private val _projet = MutableStateFlow("")
     val searchQuery = MutableStateFlow("")
@@ -51,9 +52,31 @@ class GalleryViewModel(private val photoDao: PhotoDao) : ViewModel() {
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val filteredSortedIndexedPhotos = combine(
-        photos, searchQuery, sortOption
-    ) { list, query, sort ->
+    // ThreadLocal formatter to avoid reallocating SimpleDateFormat on each recomputation
+    private val dateFormatThreadLocal = ThreadLocal.withInitial { SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()) }
+
+    /**
+     * Core pipeline:
+     * - filteredSortedIndexedPhotos: List of (originalIndex, PhotoEntity) already filtered and sorted.
+     *   Sorting/parsing work occurs here once per emission.
+     * - groupedPhotosWithIndex: grouping of the sorted list, computed on Default dispatcher.
+     */
+    val filteredSortedIndexedPhotos = combine(photos, searchQuery, sortOption) { list, query, sort ->
+        // Precompute parse results once per item
+        data class Enriched(val originalIndex: Int, val photo: PhotoEntity, val parsedDate: Long, val parsedSeq: Pair<Int, String>)
+
+        fun parseSeqOnce(seq: String): Pair<Int, String> {
+            val num = seq.filter { it.isDigit() }.toIntOrNull() ?: Int.MAX_VALUE
+            val alpha = seq.filter { it.isLetter() }.lowercase(Locale.getDefault())
+            return Pair(num, alpha)
+        }
+
+        fun parseDateOnce(dateStr: String): Long {
+            return try {
+                dateFormatThreadLocal.get().parse(dateStr)?.time ?: 0L
+            } catch (_: Exception) { 0L }
+        }
+
         val filtered = if (query.isEmpty()) list else {
             val lowerQuery = query.lowercase(Locale.getDefault())
             list.filter {
@@ -62,30 +85,60 @@ class GalleryViewModel(private val photoDao: PhotoDao) : ViewModel() {
             }
         }
 
-        fun parseSeq(seq: String): Pair<Int, String> {
-            val num = seq.filter { it.isDigit() }.toIntOrNull() ?: Int.MAX_VALUE
-            val alpha = seq.filter { it.isLetter() }.lowercase(Locale.getDefault())
-            return Pair(num, alpha)
+        val enrichedList = filtered.mapIndexed { idx, photo ->
+            Enriched(idx, photo, parseDateOnce(photo.date), parseSeqOnce(photo.sequence))
         }
 
-        val dateFormat = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
-        fun parseDate(dateStr: String): Long {
-            return try { dateFormat.parse(dateStr)?.time ?: 0L } catch (_: Exception) { 0L }
+        val sortedEnriched = when (sort) {
+            SortOption.DATE_DESC -> enrichedList.sortedByDescending { it.parsedDate }
+            SortOption.DATE_ASC -> enrichedList.sortedBy { it.parsedDate }
+            SortOption.SEQUENCE_ASC -> enrichedList.sortedWith(compareBy({ it.parsedSeq.first }, { it.parsedSeq.second }))
+            SortOption.SEQUENCE_DESC -> enrichedList.sortedWith(compareByDescending<Enriched> { it.parsedSeq.first }.thenByDescending { it.parsedSeq.second })
+            SortOption.DECOR_ASC -> enrichedList.sortedBy { it.photo.decor.lowercase(Locale.getDefault()) }
+            SortOption.DECOR_DESC -> enrichedList.sortedByDescending { it.photo.decor.lowercase(Locale.getDefault()) }
         }
 
-        val sorted = when (sort) {
-            SortOption.DATE_DESC -> filtered.sortedByDescending { parseDate(it.date) }
-            SortOption.DATE_ASC -> filtered.sortedBy { parseDate(it.date) }
-            SortOption.SEQUENCE_ASC -> filtered.sortedWith(compareBy({ parseSeq(it.sequence).first }, { parseSeq(it.sequence).second }))
-            SortOption.SEQUENCE_DESC -> filtered.sortedWith(compareByDescending<PhotoEntity> { parseSeq(it.sequence).first }.thenByDescending { parseSeq(it.sequence).second })
-            SortOption.DECOR_ASC -> filtered.sortedBy { it.decor.lowercase(Locale.getDefault()) }
-            SortOption.DECOR_DESC -> filtered.sortedByDescending { it.decor.lowercase(Locale.getDefault()) }
-        }
-
-        sorted.mapIndexed { index, photo -> index to photo }
+        sortedEnriched.map { it.originalIndex to it.photo }
     }
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /**
+     * Grouped list exposed to UI:
+     * List of pairs (header string, list of (originalIndex, PhotoEntity) in that group)
+     *
+     * This runs on Dispatchers.Default to avoid grouping on the UI thread.
+     * We combine with sortOption so the header formatting (which depends on sort) is correct.
+     */
+    val groupedPhotosWithIndex: StateFlow<List<Pair<String, List<Pair<Int, PhotoEntity>>>>> =
+        combine(filteredSortedIndexedPhotos, sortOption) { sortedList, sort ->
+            // Build grouping key depending on current sort option
+            val groups = when (sort) {
+                SortOption.DATE_DESC, SortOption.DATE_ASC -> {
+                    sortedList.groupBy { (_, photo) -> "Date : ${photo.date.substringBefore(" ")}" }
+                }
+                SortOption.SEQUENCE_ASC, SortOption.SEQUENCE_DESC -> {
+                    sortedList.groupBy { (_, photo) -> "Séquence ${photo.sequence}" }
+                }
+                SortOption.DECOR_ASC, SortOption.DECOR_DESC -> {
+                    sortedList.groupBy { (_, photo) -> "Décor : ${photo.decor}" }
+                }
+            }
+            // Preserve group ordering as in sortedList (to keep list order stable)
+            val orderedKeys = sortedList.map { (_, photo) ->
+                when (sort) {
+                    SortOption.DATE_DESC, SortOption.DATE_ASC -> "Date : ${photo.date.substringBefore(" ")}"
+                    SortOption.SEQUENCE_ASC, SortOption.SEQUENCE_DESC -> "Séquence ${photo.sequence}"
+                    SortOption.DECOR_ASC, SortOption.DECOR_DESC -> "Décor : ${photo.decor}"
+                }
+            }.distinct()
+
+            orderedKeys.mapNotNull { key ->
+                groups[key]?.let { key to it }
+            }
+        }
+            .flowOn(Dispatchers.Default)
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 }
 
 class GalleryViewModelFactory(private val dao: PhotoDao) : ViewModelProvider.Factory {
