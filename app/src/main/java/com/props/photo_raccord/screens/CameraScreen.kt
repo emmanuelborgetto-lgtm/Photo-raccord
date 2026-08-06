@@ -3,6 +3,8 @@ package com.props.photo_raccord.screens
 import android.Manifest
 import android.view.OrientationEventListener
 import android.view.Surface
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
@@ -51,63 +53,152 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
-import com.google.accompanist.permissions.ExperimentalPermissionsApi
-import com.google.accompanist.permissions.isGranted
-import com.google.accompanist.permissions.rememberPermissionState
+import androidx.lifecycle.LifecycleOwner
 import com.props.photo_raccord.AppDatabase
 import com.props.photo_raccord.utils.takeAndProcessPhoto
+import kotlinx.coroutines.CoroutineScope
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
-@OptIn(ExperimentalPermissionsApi::class)
 @Composable
 fun CameraScreen(projet: String, sequence: String, decor: String, onClose: () -> Unit) {
-    val cameraPermissionState = rememberPermissionState(Manifest.permission.CAMERA)
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var hasPermission by remember { mutableStateOf(false) }
     var notificationMessage by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(notificationMessage) { if (notificationMessage != null) { kotlinx.coroutines.delay(2000); notificationMessage = null } }
+
+    // Utilisation de l'API native pour les permissions
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted: Boolean ->
+        hasPermission = isGranted
+    }
+
+    // Vérification initiale de la permission
+    LaunchedEffect(Unit) {
+        val permissionCheck = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.CAMERA
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        hasPermission = permissionCheck
+        if (!permissionCheck) {
+            permissionLauncher.launch(Manifest.permission.CAMERA)
+        }
+    }
+
+    LaunchedEffect(notificationMessage) {
+        if (notificationMessage != null) {
+            kotlinx.coroutines.delay(2000)
+            notificationMessage = null
+        }
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        if (cameraPermissionState.status.isGranted) {
-            CameraPreview(projet, sequence, decor, onClose) { notificationMessage = it }
+        if (hasPermission) {
+            CameraPreview(
+                projet = projet,
+                sequence = sequence,
+                decor = decor,
+                lifecycleOwner = lifecycleOwner,
+                onClose = onClose,
+                onPhotoSaved = { message -> notificationMessage = message }
+            )
         } else {
-            Column(modifier = Modifier.fillMaxSize().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+            Column(
+                modifier = Modifier.fillMaxSize().padding(16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
                 Text("L'application a besoin d'accéder à l'appareil photo.")
                 Spacer(modifier = Modifier.height(16.dp))
-                Button(onClick = { cameraPermissionState.launchPermissionRequest() }) { Text("Autoriser la caméra") }
+                Button(onClick = { permissionLauncher.launch(Manifest.permission.CAMERA) }) {
+                    Text("Autoriser la caméra")
+                }
                 Spacer(modifier = Modifier.height(8.dp))
                 TextButton(onClick = onClose) { Text("Annuler") }
             }
         }
+
+        // Notification toast
         notificationMessage?.let { message ->
-            Surface(modifier = Modifier.align(Alignment.TopCenter).padding(top = 48.dp).safeDrawingPadding(), color = MaterialTheme.colorScheme.inverseSurface, shape = MaterialTheme.shapes.medium) {
-                Text(message, color = MaterialTheme.colorScheme.inverseOnSurface, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp), style = MaterialTheme.typography.bodyMedium)
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 48.dp)
+                    .safeDrawingPadding(),
+                color = MaterialTheme.colorScheme.inverseSurface,
+                shape = MaterialTheme.shapes.medium
+            ) {
+                Text(
+                    text = message,
+                    color = MaterialTheme.colorScheme.inverseOnSurface,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    style = MaterialTheme.typography.bodyMedium
+                )
             }
         }
     }
 }
 
 @Composable
-fun CameraPreview(projet: String, sequence: String, decor: String, onClose: () -> Unit, onPhotoSaved: (String) -> Unit) {
+fun CameraPreview(
+    projet: String,
+    sequence: String,
+    decor: String,
+    lifecycleOwner: LifecycleOwner,
+    onClose: () -> Unit,
+    onPhotoSaved: (String) -> Unit
+) {
     val context = LocalContext.current
-    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
-    val imageCapture = remember { ImageCapture.Builder().setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY).build() }
+    val imageCapture = remember {
+        ImageCapture.Builder()
+            .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+            .build()
+    }
     var flashMode by remember { mutableIntStateOf(ImageCapture.FLASH_MODE_OFF) }
     val photoDao = remember { AppDatabase.getDatabase(context).photoDao() }
     val coroutineScope = rememberCoroutineScope()
     val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
-    DisposableEffect(Unit) { onDispose { cameraExecutor.shutdown() } }
-    var camera by remember { mutableStateOf<Camera?>(null) }
+
+    // État pour la caméra et le zoom
+    var camera: Camera? by remember { mutableStateOf(null) }
     var minZoom by remember { mutableFloatStateOf(1f) }
     var maxZoom by remember { mutableFloatStateOf(5f) }
 
+    // Nettoyage des ressources
+    DisposableEffect(Unit) {
+        onDispose {
+            // 1. Arrêt propre de l'executor
+            cameraExecutor.shutdownNow()
+            try {
+                if (!cameraExecutor.awaitTermination(1, TimeUnit.SECONDS)) {
+                    cameraExecutor.shutdownNow()
+                }
+            } catch (e: InterruptedException) {
+                cameraExecutor.shutdownNow()
+                Thread.currentThread().interrupt()
+            }
+
+            // 2. Libération de la caméra
+            camera?.let { cam ->
+                try {
+                    ProcessCameraProvider.getInstance(context).get().unbindAll()
+                } catch (e: Exception) {
+                    // Ignorer les erreurs de libération
+                }
+            }
+        }
+    }
+
+    // Gestion de l'orientation
     DisposableEffect(Unit) {
         val orientationEventListener = object : OrientationEventListener(context) {
             override fun onOrientationChanged(orientation: Int) {
-                if (orientation == ORIENTATION_UNKNOWN) {
-                    return
-                }
+                if (orientation == ORIENTATION_UNKNOWN) return
                 imageCapture.targetRotation = when (orientation) {
                     in 45..134 -> Surface.ROTATION_270
                     in 135..224 -> Surface.ROTATION_180
@@ -120,33 +211,134 @@ fun CameraPreview(projet: String, sequence: String, decor: String, onClose: () -
         onDispose { orientationEventListener.disable() }
     }
 
-    Box(modifier = Modifier.fillMaxSize()
-        .pointerInput(Unit) { detectTapGestures(onDoubleTap = { camera?.let { cam -> val current = cam.cameraInfo.zoomState.value?.zoomRatio ?: 1f; cam.cameraControl.setZoomRatio(if (current > 1.2f) 1f else 2.5f.coerceAtMost(maxZoom)) } }) }
-        .pointerInput(Unit) { detectTransformGestures { _, _, zoom, _ -> camera?.let { cam -> val currentZoom = cam.cameraInfo.zoomState.value?.zoomRatio ?: 1f; cam.cameraControl.setZoomRatio((currentZoom * zoom).coerceIn(minZoom, maxZoom)) } } }) {
-        AndroidView(factory = { ctx ->
-            val previewView = PreviewView(ctx)
-            ProcessCameraProvider.getInstance(ctx).addListener({
-                val cameraProvider = ProcessCameraProvider.getInstance(ctx).get()
-                val preview = Preview.Builder().build().also { it.surfaceProvider = previewView.surfaceProvider }
-                try {
-                    cameraProvider.unbindAll()
-                    val boundCamera = cameraProvider.bindToLifecycle(lifecycleOwner, CameraSelector.DEFAULT_BACK_CAMERA, preview, imageCapture)
-                    camera = boundCamera
-                    boundCamera.cameraInfo.zoomState.observe(lifecycleOwner) { state -> minZoom = state.minZoomRatio; maxZoom = state.maxZoomRatio }
-                } catch (exc: Exception) { android.util.Log.e("CameraX", "Échec", exc) }
-            }, ContextCompat.getMainExecutor(ctx))
-            previewView
-        }, modifier = Modifier.fillMaxSize())
+    // Gestion du zoom
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onDoubleTap = {
+                        camera?.let { cam ->
+                            val currentZoom = cam.cameraInfo.zoomState.value?.zoomRatio ?: 1f
+                            cam.cameraControl.setZoomRatio(
+                                if (currentZoom > 1.2f) 1f else 2.5f.coerceAtMost(maxZoom)
+                            )
+                        }
+                    }
+                )
+            }
+            .pointerInput(Unit) {
+                detectTransformGestures { _, _, zoom, _ ->
+                    camera?.let { cam ->
+                        val currentZoom = cam.cameraInfo.zoomState.value?.zoomRatio ?: 1f
+                        cam.cameraControl.setZoomRatio(
+                            (currentZoom * zoom).coerceIn(minZoom, maxZoom)
+                        )
+                    }
+                }
+            }
+    ) {
+        // Preview de la caméra
+        AndroidView(
+            factory = { ctx ->
+                val previewView = PreviewView(ctx)
+                val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
 
-        Box(modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(32.dp).safeDrawingPadding()) {
-            TextButton(onClick = onClose, modifier = Modifier.align(Alignment.CenterStart)) { Text("Retour", color = Color.White) }
-            Box(modifier = Modifier.size(72.dp).align(Alignment.Center).background(Color.White, CircleShape).border(4.dp, Color.LightGray, CircleShape)
-                .clickable(onClick = { takeAndProcessPhoto(context, imageCapture, cameraExecutor, coroutineScope, photoDao, projet, sequence, decor, onPhotoSaved) })) {}
-            IconButton(onClick = {
-                flashMode = when (flashMode) { ImageCapture.FLASH_MODE_OFF -> ImageCapture.FLASH_MODE_ON; ImageCapture.FLASH_MODE_ON -> ImageCapture.FLASH_MODE_AUTO; else -> ImageCapture.FLASH_MODE_OFF }
-                imageCapture.flashMode = flashMode
-            }, modifier = Modifier.align(Alignment.CenterEnd)) {
-                Icon(when (flashMode) { ImageCapture.FLASH_MODE_ON -> Icons.Default.FlashOn; ImageCapture.FLASH_MODE_AUTO -> Icons.Default.FlashAuto; else -> Icons.Default.FlashOff }, "Flash", tint = Color.White)
+                cameraProviderFuture.addListener(
+                    {
+                        val cameraProvider = cameraProviderFuture.get()
+                        val preview = Preview.Builder().build().apply {
+                            surfaceProvider = previewView.surfaceProvider
+                        }
+
+                        try {
+                            // Désassocier les anciennes liaisons
+                            cameraProvider.unbindAll()
+
+                            // Créer une nouvelle liaison
+                            camera = cameraProvider.bindToLifecycle(
+                                lifecycleOwner,
+                                CameraSelector.DEFAULT_BACK_CAMERA,
+                                preview,
+                                imageCapture
+                            )
+
+                            // Mettre à jour les limites de zoom
+                            camera?.cameraInfo?.zoomState?.observe(lifecycleOwner) { state ->
+                                minZoom = state.minZoomRatio
+                                maxZoom = state.maxZoomRatio
+                            }
+                        } catch (exc: Exception) {
+                            android.util.Log.e("CameraX", "Échec de la liaison de la caméra", exc)
+                        }
+                    },
+                    ContextCompat.getMainExecutor(ctx)
+                )
+                previewView
+            },
+            modifier = Modifier.fillMaxSize()
+        )
+
+        // Contrôles de la caméra
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .padding(32.dp)
+                .safeDrawingPadding()
+        ) {
+            TextButton(
+                onClick = onClose,
+                modifier = Modifier.align(Alignment.CenterStart)
+            ) {
+                Text("Retour", color = Color.White)
+            }
+
+            // Bouton de capture
+            Box(
+                modifier = Modifier
+                    .size(72.dp)
+                    .align(Alignment.Center)
+                    .background(Color.White, CircleShape)
+                    .border(4.dp, Color.LightGray, CircleShape)
+                    .clickable(
+                        onClick = {
+                            takeAndProcessPhoto(
+                                context = context,
+                                imageCapture = imageCapture,
+                                cameraExecutor = cameraExecutor,
+                                coroutineScope = coroutineScope,
+                                photoDao = photoDao,
+                                projet = projet,
+                                sequence = sequence,
+                                decor = decor,
+                                onPhotoSaved = onPhotoSaved
+                            )
+                        }
+                    )
+            ) {}
+
+            // Bouton du flash
+            IconButton(
+                onClick = {
+                    flashMode = when (flashMode) {
+                        ImageCapture.FLASH_MODE_OFF -> ImageCapture.FLASH_MODE_ON
+                        ImageCapture.FLASH_MODE_ON -> ImageCapture.FLASH_MODE_AUTO
+                        else -> ImageCapture.FLASH_MODE_OFF
+                    }
+                    imageCapture.flashMode = flashMode
+                },
+                modifier = Modifier.align(Alignment.CenterEnd)
+            ) {
+                Icon(
+                    when (flashMode) {
+                        ImageCapture.FLASH_MODE_ON -> Icons.Default.FlashOn
+                        ImageCapture.FLASH_MODE_AUTO -> Icons.Default.FlashAuto
+                        else -> Icons.Default.FlashOff
+                    },
+                    contentDescription = "Flash",
+                    tint = Color.White
+                )
             }
         }
     }
