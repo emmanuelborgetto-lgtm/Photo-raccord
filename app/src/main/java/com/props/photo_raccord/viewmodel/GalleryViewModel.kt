@@ -8,8 +8,8 @@ import com.props.photo_raccord.PhotoEntity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
@@ -28,7 +28,6 @@ enum class SortOption(val displayName: String) {
     DECOR_DESC("Décor Z-A")
 }
 
-@Suppress("RECEIVER_NULLABILITY_MISMATCH_BASED_ON_JAVA_ANNOTATIONS")
 class GalleryViewModel(private val photoDao: PhotoDao) : ViewModel() {
     private val _projet = MutableStateFlow("")
     val searchQuery = MutableStateFlow("")
@@ -57,7 +56,7 @@ class GalleryViewModel(private val photoDao: PhotoDao) : ViewModel() {
 
     /**
      * Core pipeline:
-     * - filteredSortedIndexedPhotos: List of (originalIndex, PhotoEntity) already filtered and sorted.
+     * - filteredSortedIndexedPhotos: List of (sortedPosition, PhotoEntity) already filtered and sorted.
      *   Sorting/parsing work occurs here once per emission.
      * - groupedPhotosWithIndex: grouping of the sorted list, computed on Default dispatcher.
      */
@@ -98,14 +97,15 @@ class GalleryViewModel(private val photoDao: PhotoDao) : ViewModel() {
             SortOption.DECOR_DESC -> enrichedList.sortedByDescending { it.photo.decor.lowercase(Locale.getDefault()) }
         }
 
-        sortedEnriched.map { it.originalIndex to it.photo }
+        // IMPORTANT CHANGE: return the index in the sorted list (newIndex) so UI indexes match sorted order.
+        sortedEnriched.mapIndexed { newIndex, enriched -> newIndex to enriched.photo }
     }
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     /**
      * Grouped list exposed to UI:
-     * List of pairs (header string, list of (originalIndex, PhotoEntity) in that group)
+     * List of pairs (header string, list of (sortedPosition, PhotoEntity) in that group)
      *
      * This runs on Dispatchers.Default to avoid grouping on the UI thread.
      * We combine with sortOption so the header formatting (which depends on sort) is correct.

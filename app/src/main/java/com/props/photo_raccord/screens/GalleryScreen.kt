@@ -42,7 +42,6 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DividerDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -51,6 +50,7 @@ import androidx.compose.material3.ExposedDropdownMenuAnchorType
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -60,9 +60,6 @@ import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TextField
-import androidx.compose.material3.TextFieldDefaults
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -74,7 +71,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -83,13 +79,7 @@ import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardActions
-import androidx.compose.ui.text.input.KeyboardOptions
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -162,14 +152,17 @@ fun GalleryScreen(projet: String, onClose: () -> Unit) {
             if (filteredSortedIndexedPhotos.isEmpty())
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text(if (snapshotPhotoList.isEmpty()) "Aucune photo enregistrée pour ce projet." else "Aucune photo ne correspond à votre recherche.")
-                }
-            else
+                } else
                 LazyVerticalGrid(columns = GridCells.Fixed(2), modifier = Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     // Iterate grouped data prepared by the ViewModel
                     groupedPhotos.forEach { (header, indexedPhotosInGroup) ->
                         item(span = { GridItemSpan(maxLineSpan) }) {
                             Column(modifier = Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 4.dp)) {
-                                Divider(modifier = Modifier.padding(bottom = 8.dp), color = MaterialTheme.colorScheme.outlineVariant)
+                                HorizontalDivider(
+                                    modifier = Modifier.padding(bottom = 8.dp),
+                                    thickness = DividerDefaults.Thickness,
+                                    color = MaterialTheme.colorScheme.outlineVariant
+                                )
                                 Text(header, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
                             }
                         }
@@ -211,58 +204,27 @@ fun GalleryScreen(projet: String, onClose: () -> Unit) {
 
 @Composable
 private fun PhotoCard(photo: PhotoEntity, sortOption: SortOption, onClick: () -> Unit) {
-    // recommended size matches Coil request size(300) for efficient decode
-    val cardHeight = 200.dp
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(cardHeight)
-            .clickable(onClick = onClick)
-            .semantics { contentDescription = "Photo ${photo.sequence} ${photo.decor}" },
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-        shape = MaterialTheme.shapes.medium
-    ) {
-        Box(modifier = Modifier.fillMaxSize()) {
-            // Image - fill the area and keep crop behaviour
+    Card(modifier = Modifier.fillMaxWidth().height(200.dp).clickable(onClick = onClick)) {
+        Column(modifier = Modifier.fillMaxSize()) {
             AsyncImage(
-                model = ImageRequest.Builder(LocalContext.current)
-                    .data(Uri.parse(photo.uri))
-                    .size(300) // keep small decode for grid
-                    .crossfade(true)
-                    .build(),
+                model = ImageRequest.Builder(LocalContext.current).data(photo.uri.toUri()).size(300).crossfade(true).build(),
                 contentDescription = "Raccord ${photo.sequence}",
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(cardHeight - 40.dp) // leave space for info band (or use .weight)
-                    .clipToBounds(),
+                modifier = Modifier.weight(1f).fillMaxWidth(),
                 contentScale = ContentScale.Crop
             )
-
-            // Bottom info band - overlays the image bottom
             val infoText = when (sortOption) {
                 SortOption.DATE_DESC, SortOption.DATE_ASC -> "Seq : ${photo.sequence} | ${photo.decor}"
                 SortOption.SEQUENCE_ASC, SortOption.SEQUENCE_DESC -> "Décor : ${photo.decor}"
                 SortOption.DECOR_ASC, SortOption.DECOR_DESC -> "Seq : ${photo.sequence}"
             }
-
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .fillMaxWidth()
-                    .height(40.dp)
-                    .background(MaterialTheme.colorScheme.secondaryContainer)
-                    .padding(horizontal = 8.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = infoText,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSecondaryContainer,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
+            Text(
+                infoText,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                modifier = Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.secondaryContainer).padding(8.dp),
+                textAlign = TextAlign.Center,
+                maxLines = 1
+            )
         }
     }
 }
@@ -295,7 +257,7 @@ private fun FullScreenImageDialog(
                 var fabExpanded by remember { mutableStateOf(false) }
                 if (fabExpanded) Box(modifier = Modifier.fillMaxSize().clickable { fabExpanded = false }) {}
                 FloatingActionButton(onClick = onDismiss, containerColor = MaterialTheme.colorScheme.surfaceVariant, contentColor = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.align(Alignment.TopStart)) {
-                    Icon(Icons.Automirrored.Filled.ArrowBack, "Fermer")
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, "Fermer")
                 }
                 Box(modifier = Modifier.align(Alignment.TopEnd), contentAlignment = Alignment.TopEnd) {
                     Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(12.dp)) {
