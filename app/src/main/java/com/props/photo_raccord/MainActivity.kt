@@ -74,16 +74,25 @@ fun AppNavigation(currentTheme: String, onThemeChanged: (String) -> Unit) {
 
     when (currentScreen) {
         Screen.PROJECT -> ProjectSelectionScreen(currentProjet = projet, onProjectSelected = { selectedProjet -> projet = selectedProjet; currentScreen = Screen.SESSION })
-        Screen.SESSION -> SessionScreen(projet = projet, sequence = sequence, decor = decor, onSequenceChange = { sequence = it }, onDecorChange = { decor = it },
-            onStartCamera = { currentScreen = Screen.CAMERA }, onOpenGallery = { currentScreen = Screen.GALLERY }, onOpenSettings = { currentScreen = Screen.SETTINGS }, onBackToProjects = { currentScreen = Screen.PROJECT })
+        Screen.SESSION -> SessionScreen(
+            projet = projet,
+            sequence = sequence,
+            decor = decor,
+            onSequenceChange = { sequence = it },
+            onDecorChange = { decor = it },
+            onStartCamera = { currentScreen = Screen.CAMERA },
+            onOpenGallery = { currentScreen = Screen.GALLERY },
+            onOpenSettings = { currentScreen = Screen.SETTINGS },
+            onBackToProjects = { currentScreen = Screen.PROJECT }
+        )
         Screen.CAMERA -> CameraScreen(projet = projet, sequence = sequence, decor = decor, onClose = { currentScreen = Screen.SESSION })
-        Screen.GALLERY ->
-                    projet,
-            TODO(),
-
-        Screen.SETTINGS -> SettingsScreen(currentTheme = currentTheme, onThemeChanged = onThemeChanged,
+        Screen.GALLERY -> GalleryScreen(projet = projet, onClose = { currentScreen = Screen.SESSION })
+        Screen.SETTINGS -> SettingsScreen(
+            currentTheme = currentTheme,
+            onThemeChanged = onThemeChanged,
             onProjetRenamed = { oldName, newName -> if (projet == oldName) projet = newName },
             onProjetDeleted = { deletedProjet -> if (projet == deletedProjet) { projet = ""; currentScreen = Screen.PROJECT } },
-            onClose = { currentScreen = Screen.SESSION })
+            onClose = { currentScreen = Screen.SESSION }
+        )
     }
 }
