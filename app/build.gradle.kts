@@ -16,10 +16,14 @@ android {
         minSdk = 24
         //noinspection OldTargetApi
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
-
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // Récupération compatible avec le Configuration Cache de Gradle
+        val gitCommitCount = providers.exec {
+            commandLine("git", "rev-list", "--count", "HEAD")
+        }.standardOutput.asText.map { it.trim().toIntOrNull() ?: 1 }.getOrElse(1)
+        versionCode = gitCommitCount
+        versionName = "0.1.$gitCommitCount"
     }
 
     buildTypes {
@@ -56,11 +60,10 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.tooling)
 
     // CameraX
-    val camerax_version = "1.6.1"
-    implementation("androidx.camera:camera-core:${camerax_version}")
-    implementation("androidx.camera:camera-camera2:${camerax_version}")
-    implementation("androidx.camera:camera-lifecycle:${camerax_version}")
-    implementation("androidx.camera:camera-view:${camerax_version}")
+    implementation(libs.androidx.camera.core)
+    implementation(libs.androidx.camera.camera2)
+    implementation(libs.androidx.camera.lifecycle)
+    implementation(libs.androidx.camera.view)
 
     // Room (Base de données locale)
     implementation(libs.androidx.room.runtime)
@@ -68,16 +71,16 @@ dependencies {
     ksp(libs.androidx.room.compiler)
 
     // DataStore (Préférences)
-    implementation("androidx.datastore:datastore-preferences:1.2.1")
+    implementation(libs.androidx.datastore.preferences)
 
     // Navigation Compose
-    implementation("androidx.navigation:navigation-compose:2.9.8")
+    implementation(libs.androidx.navigation.compose)
 
-    implementation("com.google.accompanist:accompanist-permissions:0.37.3")
+    implementation(libs.accompanist.permissions)
 
     // Galerie
-    implementation("io.coil-kt:coil-compose:2.7.0")
+    implementation(libs.coil.compose)
 
-    implementation("androidx.compose.material:material-icons-core:1.7.8")
+    implementation(libs.androidx.compose.material.icons.core)
     implementation(libs.androidx.compose.material.icons.extended)
 }

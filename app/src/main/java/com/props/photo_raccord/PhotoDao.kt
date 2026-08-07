@@ -9,6 +9,8 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface PhotoDao {
+    @Query("SELECT COUNT(*) FROM photos WHERE projet = :projet")
+    fun getPhotoCountByProject(projet: String): Flow<Int>
     @Query("SELECT * FROM photos WHERE projet = :projet")
     fun getPhotosParProjet(projet: String): Flow<List<PhotoEntity>>
 

@@ -1,7 +1,6 @@
 package com.props.photo_raccord.screens
 
 import android.content.Intent
-import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -30,12 +29,13 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.ArrowDropUp
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
@@ -52,6 +52,7 @@ import androidx.compose.material3.ExposedDropdownMenuAnchorType
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -60,8 +61,6 @@ import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TextField
-import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -75,24 +74,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.DividerDefaults
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.ui.input.pointer.positionChanged
-import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntSize
@@ -104,6 +96,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.props.photo_raccord.AppDatabase
+import com.props.photo_raccord.BarlowCondensed
+import com.props.photo_raccord.DM_Mono
 import com.props.photo_raccord.PhotoEntity
 import com.props.photo_raccord.utils.deletePhotoFile
 import com.props.photo_raccord.utils.updatePhotoBanner
@@ -125,29 +119,56 @@ fun GalleryScreen(
     val viewModel: GalleryViewModel = viewModel(factory = factory)
     LaunchedEffect(projet) { viewModel.initProjet(projet) }
 
-    // Collect flows from ViewModel
     val groupedPhotos by viewModel.groupedPhotosWithIndex.collectAsState()
     val filteredSortedIndexedPhotos by viewModel.filteredSortedIndexedPhotos.collectAsState()
     val decorsExistants by viewModel.decorsExistants.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
     val sortOption by viewModel.sortOption.collectAsState()
-    val scope = rememberCoroutineScope()
-    var sortMenuExpanded by remember { mutableStateOf(false) }
 
-    // Use id-based selection to avoid index mismatch
+    val sortStates = remember { mutableStateOf(mapOf<String, Boolean>()) }
+
+    LaunchedEffect(Unit) {
+        sortStates.value = mapOf(
+            "date" to false,
+            "sequence" to false,
+            "decor" to false
+        )
+    }
+
+    fun handleSortClick(sortType: String) {
+        val currentState = sortStates.value[sortType] ?: false
+        val newState = !currentState
+        sortStates.value = sortStates.value.toMutableMap().apply { put(sortType, newState) }
+
+        val newSortOption = when (sortType) {
+            "date" -> if (newState) SortOption.DATE_ASC else SortOption.DATE_DESC
+            "sequence" -> if (newState) SortOption.SEQUENCE_ASC else SortOption.SEQUENCE_DESC
+            "decor" -> if (newState) SortOption.DECOR_ASC else SortOption.DECOR_DESC
+            else -> SortOption.DATE_DESC
+        }
+        viewModel.sortOption.value = newSortOption
+    }
+
     var selectedPhotoId by remember { mutableStateOf<Long?>(null) }
-
-    // Stable snapshot list of PhotoEntity for dialog usage (recomputed only when filteredSortedIndexedPhotos changes)
     val snapshotPhotoList = remember(filteredSortedIndexedPhotos) { filteredSortedIndexedPhotos.map { it.second } }
+    val scope = rememberCoroutineScope()
 
     Box(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize().safeDrawingPadding()) {
-            // Top app bar : juste retour + titre, la recherche/le tri sont sur la ligne du dessous
             CenterAlignedTopAppBar(
                 navigationIcon = {
-                    IconButton(onClick = onClose) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Retour") }
+                    IconButton(onClick = onClose) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Retour")
+                    }
                 },
-                title = { Text(text = projet, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                title = {
+                    Text(
+                        text = projet.uppercase(),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.titleLarge
+                    )
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface,
                     scrolledContainerColor = Color.Unspecified,
@@ -158,118 +179,121 @@ fun GalleryScreen(
                 modifier = Modifier.fillMaxWidth()
             )
 
-            // Recherche en "action secondaire" (cf. M3 Search guidelines) : une simple icône au
-            // repos, qui se déploie en champ de recherche plein largeur au clic. Le tri reste sur
-            // la même ligne quand la recherche est repliée, et laisse toute la place à la
-            // recherche une fois celle-ci ouverte.
-            val focusManager = LocalFocusManager.current
-            val searchFocusRequester = remember { FocusRequester() }
-            var searchExpanded by remember { mutableStateOf(searchQuery.isNotEmpty()) }
-
-            LaunchedEffect(searchExpanded) {
-                if (searchExpanded) searchFocusRequester.requestFocus()
-            }
-
-            Surface(
-                tonalElevation = 2.dp,
-                color = MaterialTheme.colorScheme.surface,
-                modifier = Modifier.fillMaxWidth()
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
             ) {
-                AnimatedContent(
-                    targetState = searchExpanded,
-                    label = "gallery_search_bar",
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp)
-                ) { expanded ->
-                    if (expanded) {
-                        TextField(
-                            value = searchQuery,
-                            onValueChange = { newText -> viewModel.searchQuery.value = newText },
-                            placeholder = { Text("Recherche") },
-                            singleLine = true,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .focusRequester(searchFocusRequester),
-                            leadingIcon = {
-                                IconButton(onClick = {
-                                    searchExpanded = false
-                                    viewModel.searchQuery.value = ""
-                                    focusManager.clearFocus()
-                                }) {
-                                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Fermer la recherche")
-                                }
-                            },
-                            trailingIcon = {
-                                if (searchQuery.isNotEmpty()) {
-                                    IconButton(onClick = { viewModel.searchQuery.value = "" }) {
-                                        Icon(Icons.Default.Clear, contentDescription = "Effacer")
-                                    }
-                                }
-                            },
-                            colors = TextFieldDefaults.colors(
-                                focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                                focusedTextColor = MaterialTheme.colorScheme.onSurface,
-                                unfocusedTextColor = MaterialTheme.colorScheme.onSurface
-                            ),
-                            keyboardOptions = KeyboardOptions.Default.copy(imeAction = ImeAction.Search),
-                            keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() })
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { viewModel.searchQuery.value = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text("Rechercher...", fontFamily = DM_Mono) },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Default.Search,
+                            contentDescription = "Rechercher"
                         )
-                    } else {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            IconButton(onClick = { searchExpanded = true }) {
-                                Icon(Icons.Default.Search, contentDescription = "Rechercher")
-                            }
-
-                            Box {
-                                TextButton(onClick = { sortMenuExpanded = true }) {
-                                    Text(sortOption.displayName, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Icon(Icons.Default.ArrowDropDown, contentDescription = null)
-                                }
-                                DropdownMenu(expanded = sortMenuExpanded, onDismissRequest = { sortMenuExpanded = false }) {
-                                    SortOption.entries.forEach { option ->
-                                        DropdownMenuItem(text = { Text(option.displayName, maxLines = 1, overflow = TextOverflow.Ellipsis) }, onClick = {
-                                            viewModel.sortOption.value = option
-                                            sortMenuExpanded = false
-                                        })
-                                    }
-                                }
+                    },
+                    trailingIcon = {
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { viewModel.searchQuery.value = "" }) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Effacer la recherche"
+                                )
                             }
                         }
-                    }
+                    },
+                    singleLine = true,
+                    shape = MaterialTheme.shapes.medium
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    SortButton(
+                        label = "Date",
+                        isActive = sortOption == SortOption.DATE_ASC || sortOption == SortOption.DATE_DESC,
+                        isAscending = sortStates.value["date"] ?: false,
+                        onClick = { handleSortClick("date") },
+                        modifier = Modifier.weight(1f)
+                    )
+                    SortButton(
+                        label = "Séquence",
+                        isActive = sortOption == SortOption.SEQUENCE_ASC || sortOption == SortOption.SEQUENCE_DESC,
+                        isAscending = sortStates.value["sequence"] ?: false,
+                        onClick = { handleSortClick("sequence") },
+                        modifier = Modifier.weight(1f)
+                    )
+                    SortButton(
+                        label = "Décors",
+                        isActive = sortOption == SortOption.DECOR_ASC || sortOption == SortOption.DECOR_DESC,
+                        isAscending = sortStates.value["decor"] ?: false,
+                        onClick = { handleSortClick("decor") },
+                        modifier = Modifier.weight(1f)
+                    )
                 }
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(4.dp))
 
-            // Content area: grid of cards with grouping headers
+            val gridState = rememberLazyGridState()
+
             if (filteredSortedIndexedPhotos.isEmpty()) {
-                Box(modifier = Modifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.Center) {
-                    Text(if (snapshotPhotoList.isEmpty()) "Aucune photo enregistrée pour ce projet." else "Aucune photo ne correspond à votre recherche.")
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .weight(1f)
+                        .padding(16.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        if (snapshotPhotoList.isEmpty()) "Aucune photo enregistrée pour ce projet."
+                        else "Aucune photo ne correspond à votre recherche.",
+                        fontFamily = DM_Mono
+                    )
                 }
             } else {
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(2),
-                    modifier = Modifier.fillMaxSize(),
+                    state = gridState,
+                    modifier = Modifier.weight(1f),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(8.dp)
                 ) {
                     groupedPhotos.forEach { (header, indexedPhotosInGroup) ->
                         item(span = { GridItemSpan(maxLineSpan) }) {
-                            Column(modifier = Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 4.dp)) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 12.dp, bottom = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = header,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontFamily = DM_Mono,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
                                 HorizontalDivider(
-                                    modifier = Modifier.padding(bottom = 8.dp),
-                                    thickness = DividerDefaults.Thickness,
+                                    modifier = Modifier.weight(1f),
                                     color = MaterialTheme.colorScheme.outlineVariant
                                 )
-                                Text(header, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                val count = indexedPhotosInGroup.size
+                                Text(
+                                    text = if (count > 1) "$count photos" else "$count photo",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontFamily = DM_Mono
+                                )
                             }
                         }
                         items(indexedPhotosInGroup, key = { it.second.id }) { pair ->
@@ -281,7 +305,6 @@ fun GalleryScreen(
             }
         }
 
-        // Full screen dialog opened by id -> compute index in sorted snapshot
         selectedPhotoId?.let { id ->
             val startIndex = snapshotPhotoList.indexOfFirst { it.id == id }.let { if (it >= 0) it else 0 }
             if (snapshotPhotoList.isNotEmpty()) {
@@ -310,8 +333,49 @@ fun GalleryScreen(
 }
 
 @Composable
+private fun SortButton(
+    label: String,
+    isActive: Boolean,
+    isAscending: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val containerColor = if (isActive) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
+    val contentColor = if (isActive) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+
+    Surface(
+        onClick = onClick,
+        modifier = modifier,
+        shape = MaterialTheme.shapes.small,
+        color = containerColor,
+        contentColor = contentColor
+    ) {
+        Row(
+            modifier = Modifier.padding(vertical = 6.dp, horizontal = 4.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = label.uppercase(),
+                style = MaterialTheme.typography.labelMedium,
+                fontFamily = DM_Mono,
+                color = contentColor,
+                maxLines = 1
+            )
+            Icon(
+                imageVector = if (isAscending) Icons.Default.ArrowDropUp else Icons.Default.ArrowDropDown,
+                contentDescription = if (isAscending) "Croissant" else "Décroissant",
+                tint = contentColor
+            )
+        }
+    }
+}
+
+@Composable
 private fun PhotoCard(photo: PhotoEntity, sortOption: SortOption, onClick: () -> Unit) {
-    val cardHeight = 200.dp
+    val cardHeight = 190.dp
+    val bannerHeight = 28.dp
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -332,34 +396,70 @@ private fun PhotoCard(photo: PhotoEntity, sortOption: SortOption, onClick: () ->
                 contentDescription = "Raccord ${photo.sequence}",
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(cardHeight - 40.dp)
+                    .height(cardHeight - bannerHeight)
                     .clipToBounds(),
                 contentScale = ContentScale.Crop
             )
-
-            val infoText = when (sortOption) {
-                SortOption.DATE_DESC, SortOption.DATE_ASC -> "Seq : ${photo.sequence} | ${photo.decor}"
-                SortOption.SEQUENCE_ASC, SortOption.SEQUENCE_DESC -> "Décor : ${photo.decor}"
-                SortOption.DECOR_ASC, SortOption.DECOR_DESC -> "Seq : ${photo.sequence}"
-            }
 
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomStart)
                     .fillMaxWidth()
-                    .height(40.dp)
+                    .height(bannerHeight)
                     .background(MaterialTheme.colorScheme.secondaryContainer)
                     .padding(horizontal = 8.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = infoText,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSecondaryContainer,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    textAlign = TextAlign.Center
-                )
+                when (sortOption) {
+                    SortOption.DATE_DESC, SortOption.DATE_ASC -> {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Seq : ${photo.sequence}",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontFamily = BarlowCondensed,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = photo.decor,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontFamily = BarlowCondensed,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                textAlign = TextAlign.End,
+                                modifier = Modifier.padding(start = 4.dp)
+                            )
+                        }
+                    }
+                    SortOption.SEQUENCE_ASC, SortOption.SEQUENCE_DESC -> {
+                        Text(
+                            text = "Décor : ${photo.decor}",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = BarlowCondensed,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                    SortOption.DECOR_ASC, SortOption.DECOR_DESC -> {
+                        Text(
+                            text = "Seq : ${photo.sequence}",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = BarlowCondensed,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
             }
         }
     }
@@ -443,21 +543,49 @@ private fun EditPhotoDialog(photo: PhotoEntity, existingDecors: List<String>, on
     var decor by remember { mutableStateOf(photo.decor) }
     var expandedDecor by remember { mutableStateOf(false) }
     val filteredDecors = remember(decor, existingDecors) { existingDecors.filter { it.contains(decor, ignoreCase = true) } }
-    androidx.compose.material3.AlertDialog(onDismissRequest = onDismiss, title = { Text("Éditer les informations") }, text = {
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            OutlinedTextField(value = sequence, onValueChange = { sequence = it }, label = { Text("Séquence") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            ExposedDropdownMenuBox(expanded = expandedDecor && filteredDecors.isNotEmpty(), onExpandedChange = { expandedDecor = it }) {
-                OutlinedTextField(value = decor, onValueChange = { newValue -> decor = newValue; expandedDecor = true }, label = { Text("Décor") },
-                    modifier = Modifier.fillMaxWidth().menuAnchor(ExposedDropdownMenuAnchorType.PrimaryEditable), singleLine = true,
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedDecor) })
-                DropdownMenu(expanded = expandedDecor && filteredDecors.isNotEmpty(), onDismissRequest = { expandedDecor = false }) {
-                    filteredDecors.forEach { item -> DropdownMenuItem(text = { Text(item) }, onClick = { decor = item; expandedDecor = false }) }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Éditer les informations", fontFamily = BarlowCondensed, fontWeight = FontWeight.SemiBold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = sequence,
+                    onValueChange = { sequence = it },
+                    label = { Text("Séquence", fontFamily = DM_Mono) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                ExposedDropdownMenuBox(expanded = expandedDecor && filteredDecors.isNotEmpty(), onExpandedChange = { expandedDecor = it }) {
+                    OutlinedTextField(
+                        value = decor,
+                        onValueChange = { newValue -> decor = newValue; expandedDecor = true },
+                        label = { Text("Décor", fontFamily = DM_Mono) },
+                        modifier = Modifier.fillMaxWidth().menuAnchor(ExposedDropdownMenuAnchorType.PrimaryEditable),
+                        singleLine = true,
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedDecor) }
+                    )
+                    DropdownMenu(expanded = expandedDecor && filteredDecors.isNotEmpty(), onDismissRequest = { expandedDecor = false }) {
+                        filteredDecors.forEach { item ->
+                            DropdownMenuItem(
+                                text = { Text(item, fontFamily = DM_Mono) },
+                                onClick = { decor = item; expandedDecor = false }
+                            )
+                        }
+                    }
                 }
             }
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(sequence, decor) }, enabled = sequence.isNotBlank() && decor.isNotBlank()) {
+                Text("Enregistrer", fontFamily = DM_Mono)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Annuler", fontFamily = DM_Mono)
+            }
         }
-    }, confirmButton = {
-        TextButton(onClick = { onConfirm(sequence, decor) }, enabled = sequence.isNotBlank() && decor.isNotBlank()) { Text("Enregistrer") }
-    }, dismissButton = { TextButton(onClick = onDismiss) { Text("Annuler") } })
+    )
 }
 
 @Composable
@@ -467,7 +595,7 @@ private fun FabMenuItem(text: String, icon: androidx.compose.ui.graphics.vector.
     val labelColor = if (isDestructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Surface(shape = MaterialTheme.shapes.small, color = MaterialTheme.colorScheme.surfaceVariant, shadowElevation = 2.dp) {
-            Text(text, modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp), style = MaterialTheme.typography.bodyMedium, color = labelColor)
+            Text(text, modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp), style = MaterialTheme.typography.bodyMedium, fontFamily = DM_Mono, color = labelColor)
         }
         SmallFloatingActionButton(onClick = onClick, containerColor = containerColor, contentColor = contentColor) { Icon(icon, text) }
     }

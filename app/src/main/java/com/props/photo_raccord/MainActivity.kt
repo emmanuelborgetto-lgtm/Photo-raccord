@@ -3,12 +3,11 @@ package com.props.photo_raccord
 import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.safeDrawingPadding
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -25,7 +24,6 @@ import com.props.photo_raccord.screens.ProjectSelectionScreen
 import com.props.photo_raccord.screens.Screen
 import com.props.photo_raccord.screens.SessionScreen
 import com.props.photo_raccord.screens.SettingsScreen
-import com.props.photo_raccord.utils.getColorScheme
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -41,7 +39,7 @@ fun PhotoRaccordApp() {
     val prefs = remember { context.getSharedPreferences("photo_raccord_prefs", Context.MODE_PRIVATE) }
     var currentTheme by remember { mutableStateOf(prefs.getString("app_theme", "DEFAULT") ?: "DEFAULT") }
 
-    MaterialTheme(colorScheme = getColorScheme(currentTheme, context)) {
+    PhotoRaccordTheme(context = context, theme = currentTheme) {
         Surface(modifier = Modifier.fillMaxSize().safeDrawingPadding()) {
             AppNavigation(currentTheme = currentTheme, onThemeChanged = { newTheme ->
                 currentTheme = newTheme
@@ -63,8 +61,8 @@ fun AppNavigation(currentTheme: String, onThemeChanged: (String) -> Unit) {
     if (currentScreen != Screen.PROJECT) {
         BackHandler {
             currentScreen = when (currentScreen) {
-                Screen.CAMERA, Screen.GALLERY, Screen.SETTINGS -> Screen.SESSION
-                Screen.SESSION -> Screen.PROJECT
+                Screen.CAMERA, Screen.GALLERY -> Screen.SESSION
+                Screen.SETTINGS, Screen.SESSION -> Screen.PROJECT
                 else -> Screen.PROJECT
             }
         }
@@ -73,7 +71,13 @@ fun AppNavigation(currentTheme: String, onThemeChanged: (String) -> Unit) {
     LaunchedEffect(projet) { prefs.edit { putString("last_projet", projet) } }
 
     when (currentScreen) {
-        Screen.PROJECT -> ProjectSelectionScreen(currentProjet = projet, onProjectSelected = { selectedProjet -> projet = selectedProjet; currentScreen = Screen.SESSION })
+        Screen.PROJECT -> ProjectSelectionScreen(
+            onProjectSelected = { selectedProjet ->
+                projet = selectedProjet
+                currentScreen = Screen.SESSION
+            },
+            onOpenSettings = { currentScreen = Screen.SETTINGS }
+        )
         Screen.SESSION -> SessionScreen(
             projet = projet,
             sequence = sequence,
@@ -82,21 +86,29 @@ fun AppNavigation(currentTheme: String, onThemeChanged: (String) -> Unit) {
             onDecorChange = { decor = it },
             onStartCamera = { currentScreen = Screen.CAMERA },
             onOpenGallery = { currentScreen = Screen.GALLERY },
-            onOpenSettings = { currentScreen = Screen.SETTINGS },
             onBackToProjects = { currentScreen = Screen.PROJECT }
         )
-        Screen.CAMERA -> CameraScreen(projet = projet, sequence = sequence, decor = decor, onClose = { currentScreen = Screen.SESSION })
+        Screen.CAMERA -> CameraScreen(
+            projet = projet,
+            sequence = sequence,
+            decor = decor,
+            onClose = { currentScreen = Screen.SESSION }
+        )
         Screen.GALLERY -> GalleryScreen(
             projet = projet,
             onClose = { currentScreen = Screen.SESSION }
         )
-
         Screen.SETTINGS -> SettingsScreen(
             currentTheme = currentTheme,
             onThemeChanged = onThemeChanged,
             onProjetRenamed = { oldName, newName -> if (projet == oldName) projet = newName },
-            onProjetDeleted = { deletedProjet -> if (projet == deletedProjet) { projet = ""; currentScreen = Screen.PROJECT } },
-            onClose = { currentScreen = Screen.SESSION }
+            onProjetDeleted = { deletedProjet ->
+                if (projet == deletedProjet) {
+                    projet = ""
+                }
+                currentScreen = Screen.PROJECT
+            },
+            onClose = { currentScreen = Screen.PROJECT }
         )
     }
 }
