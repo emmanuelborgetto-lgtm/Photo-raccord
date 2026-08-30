@@ -1,7 +1,7 @@
 [versions]
 accompanistPermissions = "0.37.3"
-agp = "9.3.1"
-cameraCore = "1.6.1"
+agp = "9.3.2"
+cameraCore = "1.6.2"
 coilCompose = "2.7.0"
 coreKtx = "1.19.0"
 datastorePreferences = "1.2.1"
@@ -13,9 +13,9 @@ activityCompose = "1.13.0"
 kotlin = "2.4.10"
 ksp = "2.3.10"
 materialIconsCore = "1.7.8"
-navigationCompose = "2.9.8"
+navigationCompose = "2.10.0"
 room = "2.8.4"
-composeBom = "2026.06.01"
+composeBom = "2026.08.00"
 
 [libraries]
 accompanist-permissions = { module = "com.google.accompanist:accompanist-permissions", version.ref = "accompanistPermissions" }

@@ -83,4 +83,6 @@ dependencies {
 
     implementation(libs.androidx.compose.material.icons.core)
     implementation(libs.androidx.compose.material.icons.extended)
+
+    implementation("androidx.documentfile:documentfile:1.1.0")
 }

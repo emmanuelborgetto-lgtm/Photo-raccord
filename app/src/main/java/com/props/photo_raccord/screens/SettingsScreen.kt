@@ -1,3 +1,22 @@
+/*
+ * Photoraccord
+ * Copyright (C) 2026 Emmanuel Borgetto
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+
 package com.props.photo_raccord.screens
 
 import android.content.Context
@@ -24,6 +43,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.edit
 import androidx.core.net.toUri
+import androidx.documentfile.provider.DocumentFile
 import com.props.photo_raccord.AppDatabase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -36,12 +56,18 @@ fun SettingsScreen(currentTheme: String, onThemeChanged: (String) -> Unit, onPro
     val photoDao = remember { AppDatabase.getDatabase(context).photoDao() }
     val scope = rememberCoroutineScope()
     var customTreeUri by remember { mutableStateOf(prefs.getString("storage_tree_uri", null)) }
+    var showInGallery by remember { mutableStateOf(prefs.getBoolean("show_in_gallery", true)) }
+
     val folderPickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
         uri?.let { selectedUri ->
             try {
                 context.contentResolver.takePersistableUriPermission(selectedUri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
                 customTreeUri = selectedUri.toString()
                 prefs.edit { putString("storage_tree_uri", selectedUri.toString()) }
+
+                scope.launch(Dispatchers.IO) {
+                    toggleNomediaFile(context, selectedUri.toString(), showInGallery)
+                }
             } catch (e: Exception) { Log.e("Settings", "Permission error", e) }
         }
     }
@@ -53,7 +79,6 @@ fun SettingsScreen(currentTheme: String, onThemeChanged: (String) -> Unit, onPro
     var isCleaning by remember { mutableStateOf(false) }
 
     Column(modifier = Modifier.fillMaxSize().safeDrawingPadding().padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        // En-tête avec bouton retour aligné à gauche
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.Start,
@@ -91,6 +116,24 @@ fun SettingsScreen(currentTheme: String, onThemeChanged: (String) -> Unit, onPro
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                         OutlinedButton(onClick = { folderPickerLauncher.launch(null) }, modifier = Modifier.weight(1f)) { Text("Changer le dossier") }
                         if (!customTreeUri.isNullOrEmpty()) IconButton(onClick = { customTreeUri = null; prefs.edit { remove("storage_tree_uri") } }) { Icon(Icons.Default.Close, "Réinitialiser") }
+                    }
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Afficher les photos dans la galerie", style = MaterialTheme.typography.bodyMedium)
+                        Switch(
+                            checked = showInGallery,
+                            onCheckedChange = { checked ->
+                                showInGallery = checked
+                                prefs.edit { putBoolean("show_in_gallery", checked) }
+                                scope.launch(Dispatchers.IO) {
+                                    toggleNomediaFile(context, customTreeUri, checked)
+                                }
+                            }
+                        )
                     }
                 }
             }
@@ -147,6 +190,49 @@ fun SettingsScreen(currentTheme: String, onThemeChanged: (String) -> Unit, onPro
                 IconButton(onClick = { onRename(project, project) }) { Icon(Icons.Default.Edit, "Renommer") }
                 IconButton(onClick = { onDelete(project) }) { Icon(Icons.Default.Delete, "Supprimer") }
             }
+        }
+    }
+}
+
+private fun toggleNomediaFile(context: Context, treeUriString: String?, showInGallery: Boolean) {
+    if (treeUriString != null) {
+        // Logique existante pour un dossier personnalisé (SAF)
+        try {
+            val rootDir = DocumentFile.fromTreeUri(context, Uri.parse(treeUriString))
+            if (rootDir != null && rootDir.exists()) {
+                val nomediaFile = rootDir.findFile(".nomedia")
+                if (showInGallery) {
+                    nomediaFile?.delete()
+                } else {
+                    if (nomediaFile == null) {
+                        rootDir.createFile("*/*", ".nomedia")
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("Settings", "Erreur lors de la modification de .nomedia (SAF)", e)
+        }
+    } else {
+        // Nouvelle logique pour le dossier par défaut (DCIM/PhotoRaccord)
+        try {
+            val dcimDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DCIM)
+            val photoRaccordDir = java.io.File(dcimDir, "PhotoRaccord")
+
+            // Si le dossier n'existe pas, on le crée uniquement si on veut y cacher des choses
+            if (!photoRaccordDir.exists()) {
+                if (!showInGallery) photoRaccordDir.mkdirs()
+                else return // Rien à faire si on veut afficher et que le dossier n'existe pas
+            }
+
+            val nomediaFile = java.io.File(photoRaccordDir, ".nomedia")
+
+            if (showInGallery) {
+                if (nomediaFile.exists()) nomediaFile.delete()
+            } else {
+                if (!nomediaFile.exists()) nomediaFile.createNewFile()
+            }
+        } catch (e: Exception) {
+            Log.e("Settings", "Erreur lors de la modification de .nomedia (Défaut)", e)
         }
     }
 }

@@ -1,3 +1,21 @@
+/*
+ * Photoraccord
+ * Copyright (C) 2026 Emmanuel Borgetto
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
 package com.props.photo_raccord.utils
 
 import android.content.ContentValues
@@ -24,13 +42,6 @@ import java.util.Date
 import java.util.Locale
 import java.util.concurrent.Executor
 
-/**
- * Capture et traite une photo avec :
- * - Sauvegarde directe via MediaStore
- * - Décodage optimisé (downsampling) pour éviter les OOM
- * - Dessin de la bannière en arrière-plan
- * - Insertion en base de données
- */
 fun takeAndProcessPhoto(
     context: Context,
     imageCapture: ImageCapture,
@@ -42,98 +53,55 @@ fun takeAndProcessPhoto(
     decor: String,
     onPhotoSaved: (String) -> Unit
 ) {
+    val prefs = context.getSharedPreferences("photo_raccord_prefs", Context.MODE_PRIVATE)
+    val showInGallery = prefs.getBoolean("show_in_gallery", true)
+
+    // 1. Récupération de l'URI personnalisée
+    val customTreeUriString = prefs.getString("storage_tree_uri", null)
+
     val currentDate = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date())
     val mainExecutor = ContextCompat.getMainExecutor(context)
     val safeProjet = if (projet.isBlank()) "Projet" else projet
     val resolver = context.contentResolver
 
-    // Préparation des ContentValues pour MediaStore
-    val values = ContentValues().apply {
-        put(MediaStore.MediaColumns.DISPLAY_NAME, "IMG_${System.currentTimeMillis()}.jpg")
-        put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            put(MediaStore.MediaColumns.RELATIVE_PATH, "DCIM/$safeProjet")
-            put(MediaStore.MediaColumns.IS_PENDING, 1)
-        }
-    }
-
-    // URI de la collection (pas d'un élément)
-    val collectionUri = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
-    val outputOptions = ImageCapture.OutputFileOptions.Builder(resolver, collectionUri, values).build()
+    // 2. Création d'un fichier temporaire pour la capture CameraX
+    val tempFile = java.io.File(context.cacheDir, "temp_capture_${System.currentTimeMillis()}.jpg")
+    val outputOptions = ImageCapture.OutputFileOptions.Builder(tempFile).build()
 
     imageCapture.takePicture(outputOptions, cameraExecutor, object : ImageCapture.OnImageSavedCallback {
         override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
-            val savedUri = outputFileResults.savedUri
-            if (savedUri == null) {
-                mainExecutor.execute {
-                    onPhotoSaved("Erreur : URI manquante après sauvegarde")
-                }
-                return
-            }
-
-            // Traitement lourd en arrière-plan
             coroutineScope.launch(Dispatchers.IO) {
                 try {
-                    // --- ÉTAPE 1 : Lire les dimensions sans charger l'image ---
-                    var inputStream = resolver.openInputStream(savedUri)
-                        ?: throw Exception("Impossible d'ouvrir le flux image (1)")
-
-                    val boundsOptions = BitmapFactory.Options().apply {
-                        inJustDecodeBounds = true
-                    }
-
-                    BitmapFactory.decodeStream(inputStream, null, boundsOptions)
-                    inputStream.close()
+                    // 3. Traitement de l'image depuis le fichier temporaire
+                    val boundsOptions = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    BitmapFactory.decodeFile(tempFile.absolutePath, boundsOptions)
 
                     val srcWidth = boundsOptions.outWidth
                     val srcHeight = boundsOptions.outHeight
+                    if (srcWidth <= 0 || srcHeight <= 0) throw Exception("Dimensions d'image invalides")
 
-                    if (srcWidth <= 0 || srcHeight <= 0) {
-                        throw Exception("Dimensions d'image invalides")
-                    }
-
-                    // --- ÉTAPE 2 : Calculer le facteur de downsampling ---
-                    // Taille maximale pour le traitement (1920px pour éviter les OOM)
                     val maxDimension = 1920
                     val scaleFactor = if (srcWidth > maxDimension || srcHeight > maxDimension) {
                         val maxSide = maxOf(srcWidth, srcHeight)
                         (maxSide + maxDimension - 1) / maxDimension
-                    } else {
-                        1
-                    }
+                    } else 1
 
-                    // --- ÉTAPE 3 : Décoder avec downsampling ---
                     val decodeOptions = BitmapFactory.Options().apply {
                         inSampleSize = scaleFactor
                         inMutable = true
                         inPreferredConfig = Bitmap.Config.ARGB_8888
                     }
 
-                    inputStream = resolver.openInputStream(savedUri)
-                        ?: throw Exception("Impossible d'ouvrir le flux image (2)")
+                    val bitmap = BitmapFactory.decodeFile(tempFile.absolutePath, decodeOptions) ?: throw Exception("Échec du décodage du bitmap")
 
-                    val bitmap = BitmapFactory.decodeStream(inputStream, null, decodeOptions)
-                        ?: throw Exception("Échec du décodage du bitmap")
-
-                    inputStream.close()
-
-                    // --- ÉTAPE 4 : Dessiner la bannière ---
                     val canvas = Canvas(bitmap)
                     val width = bitmap.width
                     val height = bitmap.height
                     val bannerHeight = (height * 0.08f).toInt().coerceAtLeast(1)
 
-                    // Fond noir pour la bannière
                     val paintBg = Paint().apply { color = Color.BLACK }
-                    canvas.drawRect(
-                        0f,
-                        (height - bannerHeight).toFloat(),
-                        width.toFloat(),
-                        height.toFloat(),
-                        paintBg
-                    )
+                    canvas.drawRect(0f, (height - bannerHeight).toFloat(), width.toFloat(), height.toFloat(), paintBg)
 
-                    // Calcul des positions du texte
                     val paddingX = width * 0.02f
                     val textSizeTitle = width * 0.035f
                     val textSizeDate = width * 0.028f
@@ -141,93 +109,101 @@ fun takeAndProcessPhoto(
                     val textYDate = height - (bannerHeight * 0.2f)
                     val textYCenterRight = height - (bannerHeight * 0.38f)
 
-                    // Style pour le projet (gris)
-                    val paintProjet = Paint().apply {
-                        color = Color.GRAY
-                        textSize = textSizeTitle
-                        typeface = Typeface.DEFAULT_BOLD
-                        isAntiAlias = true
-                        textAlign = Paint.Align.LEFT
-                    }
+                    val paintProjet = Paint().apply { color = Color.GRAY; textSize = textSizeTitle; typeface = Typeface.DEFAULT_BOLD; isAntiAlias = true; textAlign = Paint.Align.LEFT }
+                    val paintDate = Paint().apply { color = Color.WHITE; textSize = textSizeDate; typeface = Typeface.DEFAULT; isAntiAlias = true; textAlign = Paint.Align.LEFT }
+                    val paintDecor = Paint().apply { color = Color.WHITE; textSize = textSizeTitle; typeface = Typeface.DEFAULT_BOLD; isAntiAlias = true; textAlign = Paint.Align.CENTER }
+                    val paintSequence = Paint().apply { color = Color.WHITE; textSize = textSizeTitle; typeface = Typeface.DEFAULT_BOLD; isAntiAlias = true; textAlign = Paint.Align.RIGHT }
 
-                    // Style pour la date (blanc)
-                    val paintDate = Paint().apply {
-                        color = Color.WHITE
-                        textSize = textSizeDate
-                        typeface = Typeface.DEFAULT
-                        isAntiAlias = true
-                        textAlign = Paint.Align.LEFT
-                    }
-
-                    // Style pour le décor (blanc, centré)
-                    val paintDecor = Paint().apply {
-                        color = Color.WHITE
-                        textSize = textSizeTitle
-                        typeface = Typeface.DEFAULT_BOLD
-                        isAntiAlias = true
-                        textAlign = Paint.Align.CENTER
-                    }
-
-                    // Style pour la séquence (blanc, à droite)
-                    val paintSequence = Paint().apply {
-                        color = Color.WHITE
-                        textSize = textSizeTitle
-                        typeface = Typeface.DEFAULT_BOLD
-                        isAntiAlias = true
-                        textAlign = Paint.Align.RIGHT
-                    }
-
-                    // Dessin du texte
                     canvas.drawText(safeProjet, paddingX, textYTitle, paintProjet)
                     canvas.drawText(currentDate, paddingX, textYDate, paintDate)
                     canvas.drawText("Décor: $decor", width / 2f, textYCenterRight, paintDecor)
                     canvas.drawText("Seq: $sequence", width - paddingX, textYCenterRight, paintSequence)
 
-                    // --- ÉTAPE 5 : Sauvegarder le bitmap modifié ---
-                    resolver.openOutputStream(savedUri, "wt")?.use { outputStream ->
+                    // 4. Sauvegarde dans le dossier approprié
+                    var finalUri: android.net.Uri? = null
+                    val fileName = "IMG_${System.currentTimeMillis()}.jpg"
+
+                    if (!customTreeUriString.isNullOrEmpty()) {
+                        try {
+                            val treeUri = android.net.Uri.parse(customTreeUriString)
+                            val rootDir = androidx.documentfile.provider.DocumentFile.fromTreeUri(context, treeUri)
+                            var projectDir = rootDir?.findFile(safeProjet)
+                            if (projectDir == null) {
+                                projectDir = rootDir?.createDirectory(safeProjet)
+                            }
+                            val newFile = projectDir?.createFile("image/jpeg", fileName)
+                            finalUri = newFile?.uri
+                        } catch (e: Exception) {
+                            Log.e("CameraUtils", "Erreur SAF, basculement vers MediaStore", e)
+                        }
+                    }
+
+                    // Basculement vers MediaStore (Défaut) si SAF n'est pas utilisé ou a échoué
+                    var pendingValues: ContentValues? = null
+                    if (finalUri == null) {
+                        pendingValues = ContentValues().apply {
+                            put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+                            put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                                put(MediaStore.MediaColumns.RELATIVE_PATH, "DCIM/PhotoRaccord/$safeProjet")
+                                put(MediaStore.MediaColumns.IS_PENDING, 1)
+                            }
+                        }
+                        finalUri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, pendingValues)
+                    }
+
+                    if (finalUri == null) throw Exception("Impossible de créer le fichier de destination")
+
+                    resolver.openOutputStream(finalUri)?.use { outputStream ->
                         bitmap.compress(Bitmap.CompressFormat.JPEG, 90, outputStream)
                     } ?: throw Exception("Impossible d'ouvrir le flux de sortie")
 
-                    // --- ÉTAPE 6 : Libérer la mémoire ---
                     bitmap.recycle()
 
-                    // --- ÉTAPE 7 : Marquer comme non-pending pour Android 10+ ---
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                        values.clear()
-                        values.put(MediaStore.MediaColumns.IS_PENDING, 0)
-                        resolver.update(savedUri, values, null, null)
+                    if (pendingValues != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        pendingValues.clear()
+                        pendingValues.put(MediaStore.MediaColumns.IS_PENDING, 0)
+                        resolver.update(finalUri, pendingValues, null, null)
                     }
 
-                    // --- ÉTAPE 8 : Sauvegarder en base de données ---
-                    photoDao.insert(
-                        PhotoEntity(
-                            uri = savedUri.toString(),
-                            projet = safeProjet,
-                            sequence = sequence,
-                            decor = decor,
-                            date = currentDate
-                        )
-                    )
+                    photoDao.insert(PhotoEntity(uri = finalUri.toString(), projet = safeProjet, sequence = sequence, decor = decor, date = currentDate))
 
-                    // --- ÉTAPE 9 : Notifier le succès ---
-                    mainExecutor.execute {
-                        onPhotoSaved("Sauvegardée dans $safeProjet")
+                    // 5. Gestion du masquage de la galerie (.nomedia)
+                    if (!showInGallery) {
+                        if (!customTreeUriString.isNullOrEmpty()) {
+                            try {
+                                val treeUri = android.net.Uri.parse(customTreeUriString)
+                                val rootDir = androidx.documentfile.provider.DocumentFile.fromTreeUri(context, treeUri)
+                                if (rootDir != null && rootDir.findFile(".nomedia") == null) {
+                                    rootDir.createFile("application/octet-stream", ".nomedia")
+                                }
+                            } catch (e: Exception) { Log.e("CameraUtils", "Erreur création .nomedia SAF", e) }
+                        } else {
+                            try {
+                                val dcimDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DCIM)
+                                val photoRaccordDir = java.io.File(dcimDir, "PhotoRaccord")
+                                if (!photoRaccordDir.exists()) photoRaccordDir.mkdirs()
+                                val nomediaFile = java.io.File(photoRaccordDir, ".nomedia")
+                                if (!nomediaFile.exists()) nomediaFile.createNewFile()
+                            } catch (e: Exception) { Log.e("CameraUtils", "Erreur création .nomedia Défaut", e) }
+                        }
                     }
+
+                    mainExecutor.execute { onPhotoSaved("Sauvegardée dans $safeProjet") }
 
                 } catch (e: Throwable) {
                     Log.e("CameraUtils", "Erreur lors du traitement de la photo", e)
-                    mainExecutor.execute {
-                        onPhotoSaved("Erreur : ${e.message ?: "Traitement échoué"}")
-                    }
+                    mainExecutor.execute { onPhotoSaved("Erreur : ${e.message ?: "Traitement échoué"}") }
+                } finally {
+                    // Nettoyage impératif du fichier temporaire
+                    if (tempFile.exists()) tempFile.delete()
                 }
             }
         }
 
         override fun onError(exception: ImageCaptureException) {
             Log.e("CameraX", "Erreur de capture", exception)
-            mainExecutor.execute {
-                onPhotoSaved("Erreur : ${exception.message ?: "Capture échouée"}")
-            }
+            mainExecutor.execute { onPhotoSaved("Erreur : ${exception.message ?: "Capture échouée"}") }
         }
     })
 }

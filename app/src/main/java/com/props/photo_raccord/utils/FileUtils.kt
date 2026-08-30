@@ -1,84 +1,28 @@
+/*
+ * Photoraccord
+ * Copyright (C) 2026 Emmanuel Borgetto
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
 package com.props.photo_raccord.utils
 
 import android.content.Context
 import android.graphics.Bitmap.createBitmap
-import android.net.Uri
-import android.os.Build
 import android.provider.DocumentsContract
-import android.provider.MediaStore
 import android.util.Log
 import androidx.core.net.toUri
-
-fun saveImageToGallery(context: Context, bitmap: android.graphics.Bitmap, projet: String): String? {
-    val safeProjet = projet.ifEmpty { "Projet" }
-    val prefs = context.getSharedPreferences("photo_raccord_prefs", Context.MODE_PRIVATE)
-    val customTreeUriString = prefs.getString("storage_tree_uri", null)
-
-    if (!customTreeUriString.isNullOrEmpty()) {
-        try {
-            val treeUri = customTreeUriString.toUri()
-            val resolver = context.contentResolver
-            val rootDocId = DocumentsContract.getTreeDocumentId(treeUri)
-            val rootUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, rootDocId)
-            val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, rootDocId)
-            var projectFolderUri: Uri? = null
-
-            resolver.query(
-                childrenUri,
-                arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID, DocumentsContract.Document.COLUMN_DISPLAY_NAME, DocumentsContract.Document.COLUMN_MIME_TYPE),
-                null, null, null
-            )?.use { cursor ->
-                val idIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
-                val nameIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
-                val mimeIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_MIME_TYPE)
-                while (cursor.moveToNext()) {
-                    val name = cursor.getString(nameIndex)
-                    val mime = cursor.getString(mimeIndex)
-                    if (name.equals(safeProjet, ignoreCase = true) && mime == DocumentsContract.Document.MIME_TYPE_DIR) {
-                        projectFolderUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, cursor.getString(idIndex))
-                        break
-                    }
-                }
-            }
-
-            if (projectFolderUri == null) {
-                projectFolderUri = DocumentsContract.createDocument(resolver, rootUri, DocumentsContract.Document.MIME_TYPE_DIR, safeProjet)
-            }
-
-            val targetFolderUri = projectFolderUri ?: rootUri
-            val fileName = "IMG_${System.currentTimeMillis()}.jpg"
-            val imageUri = DocumentsContract.createDocument(resolver, targetFolderUri, "image/jpeg", fileName)
-            if (imageUri != null) {
-                resolver.openOutputStream(imageUri)?.use { out -> bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 95, out) }
-                return imageUri.toString()
-            }
-        } catch (e: Exception) {
-            Log.e("FileUtils", "Erreur SAF", e)
-        }
-    }
-
-    val contentValues = android.content.ContentValues().apply {
-        put(MediaStore.MediaColumns.DISPLAY_NAME, "IMG_${System.currentTimeMillis()}.jpg")
-        put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            put(MediaStore.MediaColumns.RELATIVE_PATH, "DCIM/$safeProjet")
-            put(MediaStore.MediaColumns.IS_PENDING, 1)
-        }
-    }
-    val resolver = context.contentResolver
-    val imageUri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues)
-    return if (imageUri != null) {
-        try {
-            resolver.openOutputStream(imageUri)?.use { bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 95, it) }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                contentValues.clear()
-                contentValues.put(MediaStore.MediaColumns.IS_PENDING, 0)
-                resolver.update(imageUri, contentValues, null, null)
-            }
-            imageUri.toString()
-        } catch (_: Exception) { null }
-    } else null
-}
 
 fun updatePhotoBanner(context: Context, photoUriString: String, projet: String, newSequence: String, newDecor: String, date: String) {
     try {

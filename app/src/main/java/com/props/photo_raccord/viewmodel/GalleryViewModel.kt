@@ -1,3 +1,21 @@
+/*
+ * Photoraccord
+ * Copyright (C) 2026 Emmanuel Borgetto
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
 package com.props.photo_raccord.viewmodel
 
 import androidx.lifecycle.ViewModel
@@ -19,13 +37,13 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 
 // Options de tri pour la galerie
-enum class SortOption(val displayName: String) {
-    DATE_DESC("Plus récentes"),
-    DATE_ASC("Plus anciennes"),
-    SEQUENCE_ASC("Séquence ↑"),
-    SEQUENCE_DESC("Séquence ↓"),
-    DECOR_ASC("Décor A-Z"),
-    DECOR_DESC("Décor Z-A")
+enum class SortOption() {
+    DATE_DESC(),
+    DATE_ASC(),
+    SEQUENCE_ASC(),
+    SEQUENCE_DESC(),
+    DECOR_ASC(),
+    DECOR_DESC()
 }
 
 class GalleryViewModel(private val photoDao: PhotoDao) : ViewModel() {
