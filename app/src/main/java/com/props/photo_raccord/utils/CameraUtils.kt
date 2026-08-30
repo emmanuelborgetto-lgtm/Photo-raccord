@@ -1,14 +1,9 @@
-/*
- * Photoraccord
- * Copyright (C) 2026 Emmanuel Borgetto
- */
 package com.props.photo_raccord.utils
 
 import android.content.ContentValues
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.graphics.Canvas
 import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
@@ -33,26 +28,16 @@ private const val PREFS_NAME = "photo_raccord_prefs"
 private const val PREF_STORAGE_TREE_URI = "storage_tree_uri"
 private const val PREF_SHOW_IN_GALLERY = "show_in_gallery"
 
-/** Dossier par défaut, privé à l'application : Android/data/<package>/files/PhotoRaccord. */
-fun getDefaultPhotoDirectory(context: Context): File =
-    File(context.getExternalFilesDir(null) ?: context.filesDir, "PhotoRaccord")
-
-fun getDefaultPhotoProjectDirectory(context: Context, projet: String): File =
-    File(getDefaultPhotoDirectory(context), projet)
+fun getDefaultPhotoDirectory(context: Context): File = File(context.getExternalFilesDir(null) ?: context.filesDir, "PhotoRaccord")
+fun getDefaultPhotoProjectDirectory(context: Context, projet: String): File = File(getDefaultPhotoDirectory(context), projet)
 
 fun ensureDefaultNomedia(context: Context, showInGallery: Boolean) {
     try {
         val directory = getDefaultPhotoDirectory(context)
         val nomedia = File(directory, ".nomedia")
-        if (showInGallery) {
-            if (nomedia.exists()) nomedia.delete()
-        } else {
-            if (!directory.exists()) directory.mkdirs()
-            if (!nomedia.exists()) nomedia.createNewFile()
-        }
-    } catch (e: Exception) {
-        Log.e("CameraUtils", "Erreur gestion .nomedia du dossier par défaut", e)
-    }
+        if (showInGallery) { if (nomedia.exists()) nomedia.delete() }
+        else { if (!directory.exists()) directory.mkdirs(); if (!nomedia.exists()) nomedia.createNewFile() }
+    } catch (e: Exception) { Log.e("CameraUtils", "Erreur gestion .nomedia du dossier par défaut", e) }
 }
 
 fun takeAndProcessPhoto(
@@ -80,21 +65,16 @@ fun takeAndProcessPhoto(
                     val srcHeight = boundsOptions.outHeight
                     if (srcWidth <= 0 || srcHeight <= 0) throw Exception("Dimensions d'image invalides")
                     val maxDimension = 1920
-                    val scaleFactor = if (srcWidth > maxDimension || srcHeight > maxDimension) {
-                        val maxSide = maxOf(srcWidth, srcHeight)
-                        (maxSide + maxDimension - 1) / maxDimension
-                    } else 1
+                    val maxSide = maxOf(srcWidth, srcHeight)
+                    val scaleFactor = if (maxSide > maxDimension) (maxSide + maxDimension - 1) / maxDimension else 1
                     val bitmap = BitmapFactory.decodeFile(tempFile.absolutePath, BitmapFactory.Options().apply {
-                        inSampleSize = scaleFactor; inMutable = true; inPreferredConfig = Bitmap.Config.ARGB_8888
+                        inSampleSize = scaleFactor
+                        inPreferredConfig = Bitmap.Config.ARGB_8888
                     }) ?: throw Exception("Échec du décodage du bitmap")
 
-                    val width = bitmap.width
-                    val height = bitmap.height
-                    val bannerHeight = (height * 0.08f).toInt().coerceAtLeast(1)
-                    drawInfoBanner(Canvas(bitmap), width, (height - bannerHeight).toFloat(), height.toFloat(), safeProjet, currentDate, decor, sequence)
-
+                    val finalBitmap = createBanneredBitmap(bitmap, safeProjet, currentDate, decor, sequence)
                     var finalUri: Uri? = null
-                    var pendingValues: ContentValues? = null
+                    var pending = false
                     val fileName = "IMG_${System.currentTimeMillis()}.jpg"
 
                     if (!customTreeUriString.isNullOrEmpty()) {
@@ -110,12 +90,12 @@ fun takeAndProcessPhoto(
                         val projectDir = getDefaultPhotoProjectDirectory(context, safeProjet)
                         if (!projectDir.exists() && !projectDir.mkdirs()) throw Exception("Impossible de créer le dossier $safeProjet")
                         val outputFile = File(projectDir, fileName)
-                        outputFile.outputStream().use { bitmap.compress(Bitmap.CompressFormat.JPEG, 90, it) }
+                        outputFile.outputStream().use { finalBitmap.compress(Bitmap.CompressFormat.JPEG, 90, it) }
                         finalUri = Uri.fromFile(outputFile)
                     }
 
                     if (finalUri == null) {
-                        pendingValues = ContentValues().apply {
+                        val values = ContentValues().apply {
                             put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
                             put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
                             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -123,18 +103,21 @@ fun takeAndProcessPhoto(
                                 put(MediaStore.MediaColumns.IS_PENDING, 1)
                             }
                         }
-                        finalUri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, pendingValues)
+                        finalUri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+                        pending = true
                     }
+
                     if (finalUri == null) throw Exception("Impossible de créer le fichier de destination")
                     if (finalUri.scheme != "file") {
-                        resolver.openOutputStream(finalUri)?.use { bitmap.compress(Bitmap.CompressFormat.JPEG, 90, it) }
+                        resolver.openOutputStream(finalUri)?.use { finalBitmap.compress(Bitmap.CompressFormat.JPEG, 90, it) }
                             ?: throw Exception("Impossible d'ouvrir le flux de sortie")
                     }
-                    bitmap.recycle()
-                    if (pendingValues != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    if (pending && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                         resolver.update(finalUri, ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }, null, null)
                     }
 
+                    bitmap.recycle()
+                    finalBitmap.recycle()
                     photoDao.insert(PhotoEntity(uri = finalUri.toString(), projet = safeProjet, sequence = sequence, decor = decor, date = currentDate))
                     if (!showInGallery) {
                         if (!customTreeUriString.isNullOrEmpty()) {
