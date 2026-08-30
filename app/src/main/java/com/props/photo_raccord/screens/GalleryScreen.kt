@@ -12,7 +12,6 @@ package com.props.photo_raccord.screens
 
 import android.content.Intent
 import android.net.Uri
-import android.provider.DocumentsContract
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -23,10 +22,6 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.calculatePan
-import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -56,7 +51,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
@@ -87,6 +81,7 @@ import com.props.photo_raccord.viewmodel.SortOption
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.io.File
+import androidx.compose.foundation.gestures.detectTransformGestures
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -236,4 +231,79 @@ private fun sharePhoto(context: android.content.Context, photo: PhotoEntity) {
 
 @Composable private fun FabMenuItem(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, destructive: Boolean, onClick: () -> Unit) { Surface(onClick = onClick, shape = MaterialTheme.shapes.medium, color = if (destructive) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.surfaceVariant, contentColor = if (destructive) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSurfaceVariant, shadowElevation = 4.dp) { Row(Modifier.padding(horizontal = 16.dp, vertical = 10.dp), Arrangement.spacedBy(8.dp), Alignment.CenterVertically) { Text(label, fontFamily = DM_Mono); Icon(icon, contentDescription = label) } } }
 
-@Composable private fun ZoomableImage(photo: PhotoEntity, isCurrentPage: Boolean, onZoomChanged: (Boolean) -> Unit) { var scale by remember(photo.uri) { mutableFloatStateOf(1f) }; var offset by remember(photo.uri) { mutableStateOf(Offset.Zero) }; var containerSize by remember(photo.uri) { mutableStateOf(IntSize.Zero) }; LaunchedEffect(scale) { onZoomChanged(scale > 1f) }; AsyncImage(model = ImageRequest.Builder(LocalContext.current).data(photo.uri).size(coil.size.Size.ORIGINAL).build(), contentDescription = null, modifier = Modifier.fillMaxSize().onSizeChanged { containerSize = it }.pointerInput(isCurrentPage) { detectTapGestures(onDoubleTap = { if (scale > 1f) { scale = 1f; offset = Offset.Zero } else scale = 2.5f }) }.pointerInput(isCurrentPage) { awaitEachGesture { awaitFirstDown(); do { val event = awaitPointerEvent(); val zoom = event.calculateZoom(); val pan = event.calculatePan(); if (scale > 1f) { scale = (scale * zoom).coerceIn(1f, 5f); val maxX = ((containerSize.width * (scale - 1f)) / 2f); val maxY = ((containerSize.height * (scale - 1f)) / 2f); offset += pan; offset = Offset(offset.x.coerceIn(-maxX, maxX), offset.y.coerceIn(-maxY, maxY)) }; } while (event.changes.any { it.pressed }); event.changes.forEach { if (it.positionChanged()) it.consume() } } }.graphicsLayer { scaleX = scale; scaleY = scale; translationX = offset.x; translationY = offset.y }, contentScale = ContentScale.Fit) }
+@Composable
+private fun ZoomableImage(
+    photo: PhotoEntity,
+    isCurrentPage: Boolean,
+    onZoomChanged: (Boolean) -> Unit
+) {
+    var scale by remember(photo.uri) { mutableFloatStateOf(1f) }
+    var offset by remember(photo.uri) { mutableStateOf(Offset.Zero) }
+    var containerSize by remember(photo.uri) { mutableStateOf(IntSize.Zero) }
+
+    LaunchedEffect(scale) {
+        onZoomChanged(scale > 1f)
+    }
+
+    AsyncImage(
+        model = ImageRequest.Builder(LocalContext.current)
+            .data(photo.uri)
+            .size(coil.size.Size.ORIGINAL)
+            .build(),
+        contentDescription = null,
+        contentScale = ContentScale.Fit,
+        modifier = Modifier
+            .fillMaxSize()
+            .onSizeChanged {
+                containerSize = it
+            }
+            .pointerInput(isCurrentPage) {
+                detectTapGestures(
+                    onDoubleTap = {
+                        if (scale > 1f) {
+                            scale = 1f
+                            offset = Offset.Zero
+                        } else {
+                            scale = 2.5f
+                        }
+                    }
+                )
+            }
+            .pointerInput(isCurrentPage) {
+                detectTransformGestures { _, pan, zoom, _ ->
+
+                    // Le zoom ne doit être pris en compte
+                    // que lorsque l'image est déjà zoomée.
+                    if (scale > 1f || zoom > 1f) {
+
+                        scale = (scale * zoom).coerceIn(1f, 5f)
+
+                        if (scale <= 1f) {
+                            scale = 1f
+                            offset = Offset.Zero
+                            return@detectTransformGestures
+                        }
+
+                        val maxX =
+                            (containerSize.width * (scale - 1f)) / 2f
+
+                        val maxY =
+                            (containerSize.height * (scale - 1f)) / 2f
+
+                        offset += pan
+
+                        offset = Offset(
+                            offset.x.coerceIn(-maxX, maxX),
+                            offset.y.coerceIn(-maxY, maxY)
+                        )
+                    }
+                }
+            }
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+                translationX = offset.x
+                translationY = offset.y
+            }
+    )
+}
