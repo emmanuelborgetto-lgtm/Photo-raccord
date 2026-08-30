@@ -6,32 +6,21 @@
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 package com.props.photo_raccord
 
 import androidx.room.Dao
 import androidx.room.Delete
 import androidx.room.Insert
+import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
 
-// Résultat de la requête groupée utilisée par l'écran de sélection des projets :
-// remplace N souscriptions Flow individuelles (une par projet) par une seule requête.
 data class ProjetCount(val projet: String, val count: Int)
 
 @Dao
 interface PhotoDao {
-    // Compte les photos de tous les projets en une seule requête groupée (évite le
-    // N+1 : une requête par projet appelée en boucle dans la liste des projets).
     @Query("SELECT projet, COUNT(*) as count FROM photos GROUP BY projet")
     fun getPhotoCountsByProjet(): Flow<List<ProjetCount>>
 
@@ -41,10 +30,23 @@ interface PhotoDao {
     @Insert
     suspend fun insert(photo: PhotoEntity)
 
-    // Les dates sont stockées au format dd/MM/yyyy HH:mm. On les convertit en
-    // yyyyMMddHHmm pour que SQLite puisse trier chronologiquement. Le MAX(date)
-    // de chaque projet correspond à sa photo la plus récente.
-    @Query("SELECT projet FROM photos WHERE projet != '' GROUP BY projet ORDER BY MAX(substr(date, 7, 4) || substr(date, 4, 2) || substr(date, 1, 2) || substr(date, 12, 5)) DESC, projet ASC")
+    /**
+     * Liste tous les projets, y compris ceux qui n'ont aucune photo.
+     * Pour un projet avec des photos, la date de la photo la plus récente est
+     * utilisée. Pour un projet vide, on retombe sur sa date de création.
+     */
+    @Query("""
+        SELECT p.nom
+        FROM projets p
+        LEFT JOIN photos ph ON ph.projet = p.nom
+        GROUP BY p.nom, p.createdAt
+        ORDER BY
+            COALESCE(
+                MAX(substr(ph.date, 7, 4) || substr(ph.date, 4, 2) || substr(ph.date, 1, 2) || substr(ph.date, 12, 5)),
+                strftime('%Y%m%d%H%M', p.createdAt / 1000, 'unixepoch')
+            ) DESC,
+            p.nom ASC
+    """)
     fun getDistinctProjets(): Flow<List<String>>
 
     @Query("SELECT DISTINCT decor FROM photos WHERE projet = :projet AND decor != '' ORDER BY decor ASC")
@@ -53,10 +55,19 @@ interface PhotoDao {
     @Query("SELECT * FROM photos")
     suspend fun getAllPhotosOnce(): List<PhotoEntity>
 
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun createProjet(projet: ProjectEntity)
+
     @Query("UPDATE photos SET projet = :newName WHERE projet = :oldName")
+    suspend fun renameProjetPhotos(oldName: String, newName: String)
+
+    @Query("UPDATE projets SET nom = :newName WHERE nom = :oldName")
     suspend fun renameProjet(oldName: String, newName: String)
 
     @Query("DELETE FROM photos WHERE projet = :projectName")
+    suspend fun deleteProjetPhotos(projectName: String)
+
+    @Query("DELETE FROM projets WHERE nom = :projectName")
     suspend fun deleteProjet(projectName: String)
 
     @Update
@@ -64,4 +75,11 @@ interface PhotoDao {
 
     @Delete
     suspend fun deletePhotos(photos: List<PhotoEntity>)
+
+    /**
+     * Lors d'une migration depuis l'ancien modèle, les projets connus uniquement
+     * par la table photos sont créés dans la nouvelle table projets.
+     */
+    @Query("INSERT OR IGNORE INTO projets(nom, createdAt) SELECT projet, CAST(strftime('%s','now') AS INTEGER) * 1000 FROM photos WHERE projet != ''")
+    suspend fun importExistingProjects()
 }
