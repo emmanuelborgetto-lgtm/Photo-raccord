@@ -233,27 +233,9 @@ fun GalleryScreen(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    SortButton(
-                        label = "Date",
-                        isActive = sortOption == SortOption.DATE_ASC || sortOption == SortOption.DATE_DESC,
-                        isAscending = sortStates.value["date"] ?: false,
-                        onClick = { handleSortClick("date") },
-                        modifier = Modifier.weight(1f)
-                    )
-                    SortButton(
-                        label = "Séquence",
-                        isActive = sortOption == SortOption.SEQUENCE_ASC || sortOption == SortOption.SEQUENCE_DESC,
-                        isAscending = sortStates.value["sequence"] ?: false,
-                        onClick = { handleSortClick("sequence") },
-                        modifier = Modifier.weight(1f)
-                    )
-                    SortButton(
-                        label = "Décors",
-                        isActive = sortOption == SortOption.DECOR_ASC || sortOption == SortOption.DECOR_DESC,
-                        isAscending = sortStates.value["decor"] ?: false,
-                        onClick = { handleSortClick("decor") },
-                        modifier = Modifier.weight(1f)
-                    )
+                    SortButton("Date", sortOption == SortOption.DATE_ASC || sortOption == SortOption.DATE_DESC, sortStates.value["date"] ?: false, { handleSortClick("date") }, Modifier.weight(1f))
+                    SortButton("Séquence", sortOption == SortOption.SEQUENCE_ASC || sortOption == SortOption.SEQUENCE_DESC, sortStates.value["sequence"] ?: false, { handleSortClick("sequence") }, Modifier.weight(1f))
+                    SortButton("Décors", sortOption == SortOption.DECOR_ASC || sortOption == SortOption.DECOR_DESC, sortStates.value["decor"] ?: false, { handleSortClick("decor") }, Modifier.weight(1f))
                 }
             }
 
@@ -263,10 +245,7 @@ fun GalleryScreen(
 
             if (filteredSortedIndexedPhotos.isEmpty()) {
                 Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .weight(1f)
-                        .padding(16.dp),
+                    modifier = Modifier.fillMaxSize().weight(1f).padding(16.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
@@ -287,36 +266,20 @@ fun GalleryScreen(
                     groupedPhotos.forEach { (header, indexedPhotosInGroup) ->
                         item(span = { GridItemSpan(maxLineSpan) }) {
                             Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(top = 12.dp, bottom = 4.dp),
+                                modifier = Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 4.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text(
-                                    text = header,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    fontFamily = DM_Mono,
-                                    fontWeight = FontWeight.Bold
-                                )
+                                Text(header, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary, fontFamily = DM_Mono, fontWeight = FontWeight.Bold)
                                 Spacer(modifier = Modifier.width(8.dp))
-                                HorizontalDivider(
-                                    modifier = Modifier.weight(1f),
-                                    color = MaterialTheme.colorScheme.outlineVariant
-                                )
+                                HorizontalDivider(modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.outlineVariant)
                                 Spacer(modifier = Modifier.width(8.dp))
                                 val count = indexedPhotosInGroup.size
-                                Text(
-                                    text = if (count > 1) "$count photos" else "$count photo",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    fontFamily = DM_Mono
-                                )
+                                Text(if (count > 1) "$count photos" else "$count photo", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, fontFamily = DM_Mono)
                             }
                         }
                         items(indexedPhotosInGroup, key = { it.second.id }) { pair ->
                             val photo = pair.second
-                            PhotoCard(photo = photo, sortOption = sortOption, onClick = { selectedPhotoId = photo.id })
+                            PhotoCard(photo, sortOption) { selectedPhotoId = photo.id }
                         }
                     }
                 }
@@ -332,7 +295,17 @@ fun GalleryScreen(
                     existingDecors = decorsExistants,
                     onUpdatePhoto = { updatedPhoto ->
                         scope.launch(Dispatchers.IO) {
-                            updatePhotoBanner(context, updatedPhoto.uri, updatedPhoto.projet, updatedPhoto.sequence, updatedPhoto.decor, updatedPhoto.date)
+                            // Regenerate the physical JPEG banner first, then persist
+                            // the edited metadata so Room and the image stay in sync.
+                            updatePhotoBanner(
+                                context,
+                                updatedPhoto.uri,
+                                updatedPhoto.projet,
+                                updatedPhoto.sequence,
+                                updatedPhoto.decor,
+                                updatedPhoto.date
+                            )
+                            photoDao.update(updatedPhoto)
                         }
                     },
                     onDeletePhoto = { photoToDelete ->
@@ -351,40 +324,13 @@ fun GalleryScreen(
 }
 
 @Composable
-private fun SortButton(
-    label: String,
-    isActive: Boolean,
-    isAscending: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
+private fun SortButton(label: String, isActive: Boolean, isAscending: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val containerColor = if (isActive) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
     val contentColor = if (isActive) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
-
-    Surface(
-        onClick = onClick,
-        modifier = modifier,
-        shape = MaterialTheme.shapes.small,
-        color = containerColor,
-        contentColor = contentColor
-    ) {
-        Row(
-            modifier = Modifier.padding(vertical = 6.dp, horizontal = 4.dp),
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = label.uppercase(),
-                style = MaterialTheme.typography.labelMedium,
-                fontFamily = DM_Mono,
-                color = contentColor,
-                maxLines = 1
-            )
-            Icon(
-                imageVector = if (isAscending) Icons.Default.ArrowDropUp else Icons.Default.ArrowDropDown,
-                contentDescription = if (isAscending) "Croissant" else "Décroissant",
-                tint = contentColor
-            )
+    Surface(onClick = onClick, modifier = modifier, shape = MaterialTheme.shapes.small, color = containerColor, contentColor = contentColor) {
+        Row(modifier = Modifier.padding(vertical = 6.dp, horizontal = 4.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+            Text(label.uppercase(), style = MaterialTheme.typography.labelMedium, fontFamily = DM_Mono, color = contentColor, maxLines = 1)
+            Icon(if (isAscending) Icons.Default.ArrowDropUp else Icons.Default.ArrowDropDown, if (isAscending) "Croissant" else "Décroissant", tint = contentColor)
         }
     }
 }
@@ -393,90 +339,27 @@ private fun SortButton(
 private fun PhotoCard(photo: PhotoEntity, sortOption: SortOption, onClick: () -> Unit) {
     val cardHeight = 190.dp
     val bannerHeight = 28.dp
-
     Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(cardHeight)
-            .clickable(onClick = onClick)
-            .semantics { contentDescription = "Photo ${photo.sequence} ${photo.decor}" },
+        modifier = Modifier.fillMaxWidth().height(cardHeight).clickable(onClick = onClick).semantics { contentDescription = "Photo ${photo.sequence} ${photo.decor}" },
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
         shape = MaterialTheme.shapes.medium
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
             AsyncImage(
-                model = ImageRequest.Builder(LocalContext.current)
-                    .data(photo.uri)
-                    .size(300)
-                    .crossfade(true)
-                    .build(),
+                model = ImageRequest.Builder(LocalContext.current).data(photo.uri).size(300).crossfade(true).build(),
                 contentDescription = "Raccord ${photo.sequence}",
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(cardHeight - bannerHeight)
-                    .clipToBounds(),
+                modifier = Modifier.fillMaxWidth().height(cardHeight - bannerHeight).clipToBounds(),
                 contentScale = ContentScale.Crop
             )
-
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .fillMaxWidth()
-                    .height(bannerHeight)
-                    .background(MaterialTheme.colorScheme.secondaryContainer)
-                    .padding(horizontal = 8.dp),
-                contentAlignment = Alignment.Center
-            ) {
+            Box(modifier = Modifier.align(Alignment.BottomStart).fillMaxWidth().height(bannerHeight).background(MaterialTheme.colorScheme.secondaryContainer).padding(horizontal = 8.dp), contentAlignment = Alignment.Center) {
                 when (sortOption) {
-                    SortOption.DATE_DESC, SortOption.DATE_ASC -> {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "Seq : ${photo.sequence}",
-                                style = MaterialTheme.typography.bodySmall,
-                                fontFamily = BarlowCondensed,
-                                color = MaterialTheme.colorScheme.onSecondaryContainer,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            Text(
-                                text = photo.decor,
-                                style = MaterialTheme.typography.bodySmall,
-                                fontFamily = BarlowCondensed,
-                                color = MaterialTheme.colorScheme.onSecondaryContainer,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                textAlign = TextAlign.End,
-                                modifier = Modifier.padding(start = 4.dp)
-                            )
-                        }
+                    SortOption.DATE_DESC, SortOption.DATE_ASC -> Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Text("Seq : ${photo.sequence}", style = MaterialTheme.typography.bodySmall, fontFamily = BarlowCondensed, color = MaterialTheme.colorScheme.onSecondaryContainer, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(photo.decor, style = MaterialTheme.typography.bodySmall, fontFamily = BarlowCondensed, color = MaterialTheme.colorScheme.onSecondaryContainer, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.End, modifier = Modifier.padding(start = 4.dp))
                     }
-                    SortOption.SEQUENCE_ASC, SortOption.SEQUENCE_DESC -> {
-                        Text(
-                            text = "Décor : ${photo.decor}",
-                            style = MaterialTheme.typography.bodySmall,
-                            fontFamily = BarlowCondensed,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            textAlign = TextAlign.Center
-                        )
-                    }
-                    SortOption.DECOR_ASC, SortOption.DECOR_DESC -> {
-                        Text(
-                            text = "Seq : ${photo.sequence}",
-                            style = MaterialTheme.typography.bodySmall,
-                            fontFamily = BarlowCondensed,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            textAlign = TextAlign.Center
-                        )
-                    }
+                    SortOption.SEQUENCE_ASC, SortOption.SEQUENCE_DESC -> Text("Décor : ${photo.decor}", style = MaterialTheme.typography.bodySmall, fontFamily = BarlowCondensed, color = MaterialTheme.colorScheme.onSecondaryContainer, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
+                    SortOption.DECOR_ASC, SortOption.DECOR_DESC -> Text("Seq : ${photo.sequence}", style = MaterialTheme.typography.bodySmall, fontFamily = BarlowCondensed, color = MaterialTheme.colorScheme.onSecondaryContainer, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
                 }
             }
         }
@@ -484,14 +367,7 @@ private fun PhotoCard(photo: PhotoEntity, sortOption: SortOption, onClick: () ->
 }
 
 @Composable
-private fun FullScreenImageDialog(
-    photos: List<PhotoEntity>,
-    initialIndex: Int,
-    existingDecors: List<String>,
-    onUpdatePhoto: (PhotoEntity) -> Unit,
-    onDeletePhoto: (PhotoEntity) -> Unit,
-    onDismiss: () -> Unit
-) {
+private fun FullScreenImageDialog(photos: List<PhotoEntity>, initialIndex: Int, existingDecors: List<String>, onUpdatePhoto: (PhotoEntity) -> Unit, onDeletePhoto: (PhotoEntity) -> Unit, onDismiss: () -> Unit) {
     val context = LocalContext.current
     val pagerState = rememberPagerState(initialPage = initialIndex, pageCount = { photos.size })
     var isZoomedIn by remember { mutableStateOf(false) }
@@ -502,42 +378,27 @@ private fun FullScreenImageDialog(
         Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
             HorizontalPager(state = pagerState, userScrollEnabled = !isZoomedIn, modifier = Modifier.fillMaxSize()) { page ->
                 if (page < photos.size) {
-                    ZoomableImage(photo = photos[page], isCurrentPage = page == pagerState.currentPage, onZoomChanged = { zoomed ->
-                        if (page == pagerState.currentPage) isZoomedIn = zoomed
-                    })
+                    ZoomableImage(photo = photos[page], isCurrentPage = page == pagerState.currentPage, onZoomChanged = { zoomed -> if (page == pagerState.currentPage) isZoomedIn = zoomed })
                 }
             }
-
             Box(modifier = Modifier.fillMaxSize().padding(16.dp).safeDrawingPadding()) {
                 var fabExpanded by remember { mutableStateOf(false) }
                 if (fabExpanded) Box(modifier = Modifier.fillMaxSize().clickable { fabExpanded = false }) {}
-                FloatingActionButton(onClick = onDismiss, containerColor = MaterialTheme.colorScheme.surfaceVariant, contentColor = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.align(Alignment.TopStart)) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, "Fermer")
-                }
+                FloatingActionButton(onClick = onDismiss, containerColor = MaterialTheme.colorScheme.surfaceVariant, contentColor = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.align(Alignment.TopStart)) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Fermer") }
                 Box(modifier = Modifier.align(Alignment.TopEnd), contentAlignment = Alignment.TopEnd) {
                     Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        FloatingActionButton(onClick = { fabExpanded = !fabExpanded }, containerColor = MaterialTheme.colorScheme.primaryContainer, contentColor = MaterialTheme.colorScheme.onPrimaryContainer) {
-                            Icon(if (fabExpanded) Icons.Default.Close else Icons.Default.MoreVert, "Menu")
-                        }
+                        FloatingActionButton(onClick = { fabExpanded = !fabExpanded }, containerColor = MaterialTheme.colorScheme.primaryContainer, contentColor = MaterialTheme.colorScheme.onPrimaryContainer) { Icon(if (fabExpanded) Icons.Default.Close else Icons.Default.MoreVert, "Menu") }
                         AnimatedVisibility(visible = fabExpanded, enter = fadeIn() + expandVertically(expandFrom = Alignment.Top), exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top)) {
                             Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                FabMenuItem("Éditer", Icons.Default.Edit, false) {
-                                    fabExpanded = false; showEditDialog = true
-                                }
+                                FabMenuItem("Éditer", Icons.Default.Edit, false) { fabExpanded = false; showEditDialog = true }
                                 FabMenuItem("Partager", Icons.Default.Share, false) {
                                     fabExpanded = false
                                     if (pagerState.currentPage < photos.size) {
                                         val uri = photos[pagerState.currentPage].uri.toUri()
-                                        context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
-                                            type = "image/jpeg"; putExtra(Intent.EXTRA_STREAM, uri)
-                                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                        }, "Partager"))
+                                        context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply { type = "image/jpeg"; putExtra(Intent.EXTRA_STREAM, uri); addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION) }, "Partager"))
                                     }
                                 }
-                                FabMenuItem("Supprimer", Icons.Default.Delete, true) {
-                                    fabExpanded = false
-                                    if (pagerState.currentPage < photos.size) onDeletePhoto(photos[pagerState.currentPage])
-                                }
+                                FabMenuItem("Supprimer", Icons.Default.Delete, true) { fabExpanded = false; if (pagerState.currentPage < photos.size) onDeletePhoto(photos[pagerState.currentPage]) }
                             }
                         }
                     }
@@ -566,43 +427,17 @@ private fun EditPhotoDialog(photo: PhotoEntity, existingDecors: List<String>, on
         title = { Text("Éditer les informations", fontFamily = BarlowCondensed, fontWeight = FontWeight.SemiBold) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedTextField(
-                    value = sequence,
-                    onValueChange = { sequence = it },
-                    label = { Text("Séquence", fontFamily = DM_Mono) },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
+                OutlinedTextField(value = sequence, onValueChange = { sequence = it }, label = { Text("Séquence", fontFamily = DM_Mono) }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 ExposedDropdownMenuBox(expanded = expandedDecor && filteredDecors.isNotEmpty(), onExpandedChange = { expandedDecor = it }) {
-                    OutlinedTextField(
-                        value = decor,
-                        onValueChange = { newValue -> decor = newValue; expandedDecor = true },
-                        label = { Text("Décor", fontFamily = DM_Mono) },
-                        modifier = Modifier.fillMaxWidth().menuAnchor(ExposedDropdownMenuAnchorType.PrimaryEditable),
-                        singleLine = true,
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedDecor) }
-                    )
+                    OutlinedTextField(value = decor, onValueChange = { newValue -> decor = newValue; expandedDecor = true }, label = { Text("Décor", fontFamily = DM_Mono) }, modifier = Modifier.fillMaxWidth().menuAnchor(ExposedDropdownMenuAnchorType.PrimaryEditable), singleLine = true, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedDecor) })
                     DropdownMenu(expanded = expandedDecor && filteredDecors.isNotEmpty(), onDismissRequest = { expandedDecor = false }) {
-                        filteredDecors.forEach { item ->
-                            DropdownMenuItem(
-                                text = { Text(item, fontFamily = DM_Mono) },
-                                onClick = { decor = item; expandedDecor = false }
-                            )
-                        }
+                        filteredDecors.forEach { item -> DropdownMenuItem(text = { Text(item, fontFamily = DM_Mono) }, onClick = { decor = item; expandedDecor = false }) }
                     }
                 }
             }
         },
-        confirmButton = {
-            TextButton(onClick = { onConfirm(sequence, decor) }, enabled = sequence.isNotBlank() && decor.isNotBlank()) {
-                Text("Enregistrer", fontFamily = DM_Mono)
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Annuler", fontFamily = DM_Mono)
-            }
-        }
+        confirmButton = { TextButton(onClick = { onConfirm(sequence, decor) }, enabled = sequence.isNotBlank() && decor.isNotBlank()) { Text("Enregistrer", fontFamily = DM_Mono) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Annuler", fontFamily = DM_Mono) } }
     )
 }
 
@@ -612,9 +447,7 @@ private fun FabMenuItem(text: String, icon: androidx.compose.ui.graphics.vector.
     val contentColor = if (isDestructive) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSecondaryContainer
     val labelColor = if (isDestructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Surface(shape = MaterialTheme.shapes.small, color = MaterialTheme.colorScheme.surfaceVariant, shadowElevation = 2.dp) {
-            Text(text, modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp), style = MaterialTheme.typography.bodyMedium, fontFamily = DM_Mono, color = labelColor)
-        }
+        Surface(shape = MaterialTheme.shapes.small, color = MaterialTheme.colorScheme.surfaceVariant, shadowElevation = 2.dp) { Text(text, modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp), style = MaterialTheme.typography.bodyMedium, fontFamily = DM_Mono, color = labelColor) }
         SmallFloatingActionButton(onClick = onClick, containerColor = containerColor, contentColor = contentColor) { Icon(icon, text) }
     }
 }
@@ -631,32 +464,14 @@ private fun ZoomableImage(photo: PhotoEntity, isCurrentPage: Boolean, onZoomChan
         val maxY = (size.height * (currentScale - 1f)) / 2f
         return Offset(proposedOffset.x.coerceIn(-maxX, maxX), proposedOffset.y.coerceIn(-maxY, maxY))
     }
-
-    // Taille de décodage plafonnée à ~2x la résolution d'écran : suffisant pour le zoom x5
-    // tout en évitant de décoder des bitmaps inutilement lourds à chaque swipe du pager
-    // (cause probable du message "Image decoding logging dropped!" en logcat).
     val displayMetrics = LocalContext.current.resources.displayMetrics
     val decodeWidth = displayMetrics.widthPixels * 2
     val decodeHeight = displayMetrics.heightPixels * 2
-
     AsyncImage(
-        model = ImageRequest.Builder(LocalContext.current)
-            .data(photo.uri)
-            .size(decodeWidth, decodeHeight)
-            .memoryCacheKey("${photo.uri}_${photo.sequence}_${photo.decor}")
-            .diskCacheKey("${photo.uri}_${photo.sequence}_${photo.decor}")
-            .crossfade(true)
-            .build(),
+        model = ImageRequest.Builder(LocalContext.current).data(photo.uri).size(decodeWidth, decodeHeight).memoryCacheKey("${photo.uri}_${photo.sequence}_${photo.decor}").diskCacheKey("${photo.uri}_${photo.sequence}_${photo.decor}").crossfade(true).build(),
         contentDescription = "Photo plein écran",
         modifier = Modifier.fillMaxSize().onSizeChanged { containerSize = it }
-            .pointerInput(Unit) {
-                detectTapGestures(onDoubleTap = { tapOffset ->
-                    if (scale > 1f) { scale = 1f; offset = Offset.Zero; onZoomChanged(false) } else {
-                        val targetScale = 5f; val centerX = containerSize.width / 2f; val centerY = containerSize.height / 2f
-                        scale = targetScale; offset = clampOffset(Offset((centerX - tapOffset.x) * (targetScale - 1f), (centerY - tapOffset.y) * (targetScale - 1f)), targetScale, containerSize); onZoomChanged(true)
-                    }
-                })
-            }
+            .pointerInput(Unit) { detectTapGestures(onDoubleTap = { tapOffset -> if (scale > 1f) { scale = 1f; offset = Offset.Zero; onZoomChanged(false) } else { val targetScale = 5f; val centerX = containerSize.width / 2f; val centerY = containerSize.height / 2f; scale = targetScale; offset = clampOffset(Offset((centerX - tapOffset.x) * (targetScale - 1f), (centerY - tapOffset.y) * (targetScale - 1f)), targetScale, containerSize); onZoomChanged(true) } }) }
             .pointerInput(Unit) {
                 awaitEachGesture {
                     awaitFirstDown(requireUnconsumed = false)
