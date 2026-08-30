@@ -13,6 +13,8 @@ package com.props.photo_raccord.screens
 import android.content.Intent
 import android.net.Uri
 import android.provider.DocumentsContract
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -26,17 +28,7 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawingPadding
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -46,6 +38,7 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.ArrowDropUp
 import androidx.compose.material.icons.filled.Close
@@ -86,6 +79,7 @@ import com.props.photo_raccord.BarlowCondensed
 import com.props.photo_raccord.DM_Mono
 import com.props.photo_raccord.PhotoEntity
 import com.props.photo_raccord.utils.deletePhotoFile
+import com.props.photo_raccord.utils.importAndProcessPhoto
 import com.props.photo_raccord.utils.updatePhotoBanner
 import com.props.photo_raccord.viewmodel.GalleryViewModel
 import com.props.photo_raccord.viewmodel.GalleryViewModelFactory
@@ -119,11 +113,28 @@ fun GalleryScreen(projet: String, onClose: () -> Unit) {
         }
     }
     var selectedPhotoId by remember { mutableStateOf<Long?>(null) }
+    var importedSourceUri by remember { mutableStateOf<Uri?>(null) }
+    var showImportDialog by remember { mutableStateOf(false) }
+    var importError by remember { mutableStateOf<String?>(null) }
     val snapshotPhotoList = remember(filteredSortedIndexedPhotos) { filteredSortedIndexedPhotos.map { it.second } }
     val scope = rememberCoroutineScope()
+
+    val imagePickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            importedSourceUri = uri
+            showImportDialog = true
+        }
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize().safeDrawingPadding()) {
-            CenterAlignedTopAppBar(navigationIcon = { IconButton(onClick = onClose) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Retour") } }, title = { Text(projet.uppercase(), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleLarge) }, colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface, titleContentColor = MaterialTheme.colorScheme.onSurface), modifier = Modifier.fillMaxWidth())
+            CenterAlignedTopAppBar(
+                navigationIcon = { IconButton(onClick = onClose) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Retour") } },
+                title = { Text(projet.uppercase(), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleLarge) },
+                actions = { IconButton(onClick = { imagePickerLauncher.launch(arrayOf("image/*")) }) { Icon(Icons.Default.Add, "Importer une photo") } },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface, titleContentColor = MaterialTheme.colorScheme.onSurface),
+                modifier = Modifier.fillMaxWidth()
+            )
             Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
                 OutlinedTextField(value = searchQuery, onValueChange = { viewModel.searchQuery.value = it }, modifier = Modifier.fillMaxWidth(), placeholder = { Text("Rechercher...", fontFamily = DM_Mono) }, leadingIcon = { Icon(Icons.Default.Search, "Rechercher") }, trailingIcon = { if (searchQuery.isNotEmpty()) IconButton(onClick = { viewModel.searchQuery.value = "" }) { Icon(Icons.Default.Close, "Effacer la recherche") } }, singleLine = true, shape = MaterialTheme.shapes.medium)
                 Spacer(modifier = Modifier.height(8.dp))
@@ -136,7 +147,7 @@ fun GalleryScreen(projet: String, onClose: () -> Unit) {
             Spacer(modifier = Modifier.height(4.dp))
             val gridState = rememberLazyGridState()
             if (filteredSortedIndexedPhotos.isEmpty()) Box(modifier = Modifier.fillMaxSize().weight(1f).padding(16.dp), contentAlignment = Alignment.Center) { Text(if (snapshotPhotoList.isEmpty()) "Aucune photo enregistrée pour ce projet." else "Aucune photo ne correspond à votre recherche.", fontFamily = DM_Mono) }
-            else LazyVerticalGrid(columns = GridCells.Fixed(2), state = gridState, modifier = Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = androidx.compose.foundation.layout.PaddingValues(8.dp)) {
+            else LazyVerticalGrid(columns = GridCells.Fixed(2), state = gridState, modifier = Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(8.dp)) {
                 groupedPhotos.forEach { (header, indexedPhotosInGroup) ->
                     item(span = { GridItemSpan(maxLineSpan) }) { Row(modifier = Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) { Text(header, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary, fontFamily = DM_Mono, fontWeight = FontWeight.Bold); Spacer(modifier = Modifier.width(8.dp)); HorizontalDivider(modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.outlineVariant); Spacer(modifier = Modifier.width(8.dp)); Text(if (indexedPhotosInGroup.size > 1) "${indexedPhotosInGroup.size} photos" else "1 photo", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, fontFamily = DM_Mono) } }
                     items(indexedPhotosInGroup, key = { it.second.id }) { pair -> PhotoCard(pair.second, sortOption) { selectedPhotoId = pair.second.id } }
@@ -151,6 +162,34 @@ fun GalleryScreen(projet: String, onClose: () -> Unit) {
                 onDismiss = { selectedPhotoId = null })
             else selectedPhotoId = null
         }
+    }
+
+    if (showImportDialog && importedSourceUri != null) {
+        EditPhotoDialog(
+            photo = PhotoEntity(uri = importedSourceUri.toString(), projet = projet, sequence = "", decor = "", date = ""),
+            existingDecors = decorsExistants,
+            title = "Importer la photo",
+            onConfirm = { sequence, decor ->
+                showImportDialog = false
+                val source = importedSourceUri
+                importedSourceUri = null
+                if (source != null) {
+                    scope.launch(Dispatchers.IO) {
+                        try {
+                            val (uriString, date) = importAndProcessPhoto(context, source, projet, sequence, decor)
+                            photoDao.insert(PhotoEntity(uri = uriString, projet = projet, sequence = sequence, decor = decor, date = date))
+                        } catch (e: Exception) {
+                            importError = e.message ?: "Impossible d'importer la photo"
+                        }
+                    }
+                }
+            },
+            onDismiss = { showImportDialog = false; importedSourceUri = null }
+        )
+    }
+
+    importError?.let { message ->
+        AlertDialog(onDismissRequest = { importError = null }, title = { Text("Import impossible") }, text = { Text(message) }, confirmButton = { TextButton(onClick = { importError = null }) { Text("OK") } })
     }
 }
 
@@ -187,16 +226,14 @@ fun GalleryScreen(projet: String, onClose: () -> Unit) {
 private fun sharePhoto(context: android.content.Context, photo: PhotoEntity) {
     try {
         val sourceUri = photo.uri.toUri()
-        val shareUri = if (sourceUri.scheme == "file") {
-            FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", File(sourceUri.path!!))
-        } else sourceUri
+        val shareUri = if (sourceUri.scheme == "file") FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", File(sourceUri.path!!)) else sourceUri
         context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply { type = "image/jpeg"; putExtra(Intent.EXTRA_STREAM, shareUri); clipData = android.content.ClipData.newRawUri("PhotoRaccord", shareUri); addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION) }, "Partager"))
     } catch (e: Exception) { android.widget.Toast.makeText(context, "Impossible de partager cette photo : ${e.message}", android.widget.Toast.LENGTH_LONG).show() }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
-@Composable private fun EditPhotoDialog(photo: PhotoEntity, existingDecors: List<String>, onConfirm: (String, String) -> Unit, onDismiss: () -> Unit) { var sequence by remember { mutableStateOf(photo.sequence) }; var decor by remember { mutableStateOf(photo.decor) }; var expandedDecor by remember { mutableStateOf(false) }; val filteredDecors = remember(decor, existingDecors) { existingDecors.filter { it.contains(decor, ignoreCase = true) } }; AlertDialog(onDismissRequest = onDismiss, title = { Text("Éditer les informations", fontFamily = BarlowCondensed, fontWeight = FontWeight.SemiBold) }, text = { Column(verticalArrangement = Arrangement.spacedBy(12.dp)) { OutlinedTextField(value = sequence, onValueChange = { sequence = it }, label = { Text("Séquence", fontFamily = DM_Mono) }, singleLine = true, modifier = Modifier.fillMaxWidth()); ExposedDropdownMenuBox(expanded = expandedDecor && filteredDecors.isNotEmpty(), onExpandedChange = { expandedDecor = it }) { OutlinedTextField(value = decor, onValueChange = { decor = it; expandedDecor = true }, label = { Text("Décor", fontFamily = DM_Mono) }, modifier = Modifier.fillMaxWidth().menuAnchor(ExposedDropdownMenuAnchorType.PrimaryEditable), singleLine = true, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedDecor) }); DropdownMenu(expanded = expandedDecor && filteredDecors.isNotEmpty(), onDismissRequest = { expandedDecor = false }) { filteredDecors.forEach { item -> DropdownMenuItem(text = { Text(item, fontFamily = DM_Mono) }, onClick = { decor = item; expandedDecor = false }) } } } } }, confirmButton = { TextButton(onClick = { onConfirm(sequence, decor) }, enabled = sequence.isNotBlank() && decor.isNotBlank()) { Text("Enregistrer", fontFamily = DM_Mono) } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Annuler", fontFamily = DM_Mono) } }) }
+@Composable private fun EditPhotoDialog(photo: PhotoEntity, existingDecors: List<String>, title: String = "Éditer les informations", onConfirm: (String, String) -> Unit, onDismiss: () -> Unit) { var sequence by remember { mutableStateOf(photo.sequence) }; var decor by remember { mutableStateOf(photo.decor) }; var expandedDecor by remember { mutableStateOf(false) }; val filteredDecors = remember(decor, existingDecors) { existingDecors.filter { it.contains(decor, ignoreCase = true) } }; AlertDialog(onDismissRequest = onDismiss, title = { Text(title, fontFamily = BarlowCondensed, fontWeight = FontWeight.SemiBold) }, text = { Column(verticalArrangement = Arrangement.spacedBy(12.dp)) { OutlinedTextField(value = sequence, onValueChange = { sequence = it }, label = { Text("Séquence", fontFamily = DM_Mono) }, singleLine = true, modifier = Modifier.fillMaxWidth()); ExposedDropdownMenuBox(expanded = expandedDecor && filteredDecors.isNotEmpty(), onExpandedChange = { expandedDecor = it }) { OutlinedTextField(value = decor, onValueChange = { decor = it; expandedDecor = true }, label = { Text("Décor", fontFamily = DM_Mono) }, modifier = Modifier.fillMaxWidth().menuAnchor(ExposedDropdownMenuAnchorType.PrimaryEditable), singleLine = true, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedDecor) }); DropdownMenu(expanded = expandedDecor && filteredDecors.isNotEmpty(), onDismissRequest = { expandedDecor = false }) { filteredDecors.forEach { item -> DropdownMenuItem(text = { Text(item, fontFamily = DM_Mono) }, onClick = { decor = item; expandedDecor = false }) } } } } }, confirmButton = { TextButton(onClick = { onConfirm(sequence, decor) }, enabled = sequence.isNotBlank() && decor.isNotBlank()) { Text("Enregistrer", fontFamily = DM_Mono) } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Annuler", fontFamily = DM_Mono) } }) }
 
-@Composable private fun FabMenuItem(text: String, icon: androidx.compose.ui.graphics.vector.ImageVector, isDestructive: Boolean, onClick: () -> Unit) { val containerColor = if (isDestructive) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.secondaryContainer; val contentColor = if (isDestructive) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSecondaryContainer; val labelColor = if (isDestructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant; Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) { Surface(shape = MaterialTheme.shapes.small, color = MaterialTheme.colorScheme.surfaceVariant, shadowElevation = 2.dp) { Text(text, modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp), style = MaterialTheme.typography.bodyMedium, fontFamily = DM_Mono, color = labelColor) }; SmallFloatingActionButton(onClick = onClick, containerColor = containerColor, contentColor = contentColor) { Icon(icon, text) } } }
+@Composable private fun FabMenuItem(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, destructive: Boolean, onClick: () -> Unit) { Surface(onClick = onClick, shape = MaterialTheme.shapes.medium, color = if (destructive) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.surfaceVariant, contentColor = if (destructive) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSurfaceVariant, shadowElevation = 4.dp) { Row(Modifier.padding(horizontal = 16.dp, vertical = 10.dp), Arrangement.spacedBy(8.dp), Alignment.CenterVertically) { Text(label, fontFamily = DM_Mono); Icon(icon, contentDescription = label) } } }
 
-@Composable private fun ZoomableImage(photo: PhotoEntity, isCurrentPage: Boolean, onZoomChanged: (Boolean) -> Unit) { var scale by remember { mutableFloatStateOf(1f) }; var offset by remember { mutableStateOf(Offset.Zero) }; var containerSize by remember { mutableStateOf(IntSize.Zero) }; LaunchedEffect(isCurrentPage) { if (!isCurrentPage) { scale = 1f; offset = Offset.Zero; onZoomChanged(false) } }; fun clampOffset(proposedOffset: Offset, currentScale: Float, size: IntSize): Offset { if (currentScale <= 1f || size.width == 0 || size.height == 0) return Offset.Zero; val maxX = (size.width * (currentScale - 1f)) / 2f; val maxY = (size.height * (currentScale - 1f)) / 2f; return Offset(proposedOffset.x.coerceIn(-maxX, maxX), proposedOffset.y.coerceIn(-maxY, maxY)) }; val displayMetrics = LocalContext.current.resources.displayMetrics; AsyncImage(model = ImageRequest.Builder(LocalContext.current).data(photo.uri).size(displayMetrics.widthPixels * 2, displayMetrics.heightPixels * 2).memoryCacheKey("${photo.uri}_${photo.sequence}_${photo.decor}").diskCacheKey("${photo.uri}_${photo.sequence}_${photo.decor}").crossfade(true).build(), contentDescription = "Photo plein écran", modifier = Modifier.fillMaxSize().onSizeChanged { containerSize = it }.pointerInput(Unit) { detectTapGestures(onDoubleTap = { tapOffset -> if (scale > 1f) { scale = 1f; offset = Offset.Zero; onZoomChanged(false) } else { val targetScale = 5f; val centerX = containerSize.width / 2f; val centerY = containerSize.height / 2f; scale = targetScale; offset = clampOffset(Offset((centerX - tapOffset.x) * (targetScale - 1f), (centerY - tapOffset.y) * (targetScale - 1f)), targetScale, containerSize); onZoomChanged(true) } }) }.pointerInput(Unit) { awaitEachGesture { awaitFirstDown(requireUnconsumed = false); do { val event = awaitPointerEvent(); if (scale <= 1f && event.changes.size == 1) continue; val zoomChange = event.calculateZoom(); val panChange = event.calculatePan(); if (zoomChange != 1f || panChange != Offset.Zero) { val newScale = (scale * zoomChange).coerceIn(1f, 5f); val newOffset = if (newScale > 1f) offset + panChange else Offset.Zero; scale = newScale; offset = clampOffset(newOffset, newScale, containerSize); onZoomChanged(newScale > 1f); event.changes.forEach { if (it.positionChanged()) it.consume() } } } while (event.changes.any { it.pressed }) } }.graphicsLayer(scaleX = scale, scaleY = scale, translationX = offset.x, translationY = offset.y), contentScale = ContentScale.Fit) }
+@Composable private fun ZoomableImage(photo: PhotoEntity, isCurrentPage: Boolean, onZoomChanged: (Boolean) -> Unit) { var scale by remember(photo.uri) { mutableFloatStateOf(1f) }; var offset by remember(photo.uri) { mutableStateOf(Offset.Zero) }; var containerSize by remember(photo.uri) { mutableStateOf(IntSize.Zero) }; LaunchedEffect(scale) { onZoomChanged(scale > 1f) }; AsyncImage(model = ImageRequest.Builder(LocalContext.current).data(photo.uri).size(coil.size.Size.ORIGINAL).build(), contentDescription = null, modifier = Modifier.fillMaxSize().onSizeChanged { containerSize = it }.pointerInput(isCurrentPage) { detectTapGestures(onDoubleTap = { if (scale > 1f) { scale = 1f; offset = Offset.Zero } else scale = 2.5f }) }.pointerInput(isCurrentPage) { awaitEachGesture { awaitFirstDown(); do { val event = awaitPointerEvent(); val zoom = event.calculateZoom(); val pan = event.calculatePan(); if (scale > 1f) { scale = (scale * zoom).coerceIn(1f, 5f); val maxX = ((containerSize.width * (scale - 1f)) / 2f); val maxY = ((containerSize.height * (scale - 1f)) / 2f); offset += pan; offset = Offset(offset.x.coerceIn(-maxX, maxX), offset.y.coerceIn(-maxY, maxY)) }; } while (event.changes.any { it.pressed }); event.changes.forEach { if (it.positionChanged()) it.consume() } } }.graphicsLayer { scaleX = scale; scaleY = scale; translationX = offset.x; translationY = offset.y }, contentScale = ContentScale.Fit) }
