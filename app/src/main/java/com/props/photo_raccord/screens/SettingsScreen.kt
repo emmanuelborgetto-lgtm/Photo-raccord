@@ -7,7 +7,6 @@ package com.props.photo_raccord.screens
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import android.os.Environment
 import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -32,7 +31,6 @@ import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
 import com.props.photo_raccord.AppDatabase
 import com.props.photo_raccord.utils.ensureDefaultNomedia
-import com.props.photo_raccord.utils.getDefaultPhotoDirectory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -48,7 +46,7 @@ fun SettingsScreen(currentTheme: String, onThemeChanged: (String) -> Unit, onPro
     val photoDao = remember { AppDatabase.getDatabase(context).photoDao() }
     val scope = rememberCoroutineScope()
     var customTreeUri by remember { mutableStateOf(prefs.getString(PREF_STORAGE_TREE_URI, null)) }
-    var showInGallery by remember { mutableStateOf(prefs.getBoolean(PREF_SHOW_IN_GALLERY, false)) }
+    var showInGallery by remember { mutableStateOf(prefs.getBoolean(PREF_SHOW_IN_GALLERY, true)) }
     var showDcimWarning by remember { mutableStateOf(false) }
     var pendingFolderUri by remember { mutableStateOf<Uri?>(null) }
 
@@ -58,7 +56,9 @@ fun SettingsScreen(currentTheme: String, onThemeChanged: (String) -> Unit, onPro
             if (isDcim) {
                 pendingFolderUri = selectedUri
                 showDcimWarning = true
-            } else applySelectedFolder(context, prefs, selectedUri, showInGallery) { customTreeUri = it }
+            } else {
+                applySelectedFolder(context, prefs, selectedUri, showInGallery) { customTreeUri = it }
+            }
         }
     }
 
@@ -91,7 +91,7 @@ fun SettingsScreen(currentTheme: String, onThemeChanged: (String) -> Unit, onPro
             Text("Dossier de stockage", style = MaterialTheme.typography.titleMedium)
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Dossier actuel : ${getDisplayFolderPath(customTreeUri, context)}", style = MaterialTheme.typography.bodyMedium)
+                    Text("Dossier actuel : ${if (customTreeUri == null) "PhotoRaccord (stockage privé)" else customTreeUri.toUri().path?.substringAfterLast(":") ?: "Dossier personnalisé"}", style = MaterialTheme.typography.bodyMedium)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                         OutlinedButton(onClick = { folderPickerLauncher.launch(null) }, modifier = Modifier.weight(1f)) { Text("Changer le dossier") }
                         if (!customTreeUri.isNullOrEmpty()) IconButton(onClick = { resetToDefault() }) { Icon(Icons.Default.Close, "Réinitialiser") }
@@ -119,7 +119,13 @@ fun SettingsScreen(currentTheme: String, onThemeChanged: (String) -> Unit, onPro
                 isCleaning = true
                 scope.launch(Dispatchers.IO) {
                     val allPhotos = photoDao.getAllPhotosOnce()
-                    val orphans = allPhotos.filter { photo -> try { context.contentResolver.openInputStream(photo.uri.toUri())?.use { true } ?: false; false } catch (_: Exception) { true } }
+                    val orphans = allPhotos.filter { photo ->
+                        try {
+                            context.contentResolver.openInputStream(photo.uri.toUri())?.use { true } ?: false
+                        } catch (_: Exception) { false }
+                    }.filter { photo ->
+                        try { context.contentResolver.openInputStream(photo.uri.toUri())?.use { false } ?: true } catch (_: Exception) { true }
+                    }
                     if (orphans.isNotEmpty()) photoDao.deletePhotos(orphans)
                     withContext(Dispatchers.Main) { isCleaning = false; Toast.makeText(context, "${orphans.size} référence(s) orpheline(s) supprimée(s)", Toast.LENGTH_SHORT).show() }
                 }
@@ -149,16 +155,12 @@ private fun applySelectedFolder(context: Context, prefs: android.content.SharedP
         context.contentResolver.takePersistableUriPermission(selectedUri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
         prefs.edit { putString(PREF_STORAGE_TREE_URI, selectedUri.toString()) }
         onApplied(selectedUri.toString())
-        Thread { toggleNomediaFile(context, selectedUri.toString(), showInGallery) }.start()
+        toggleNomediaFile(context, selectedUri.toString(), showInGallery)
     } catch (e: Exception) { Log.e("Settings", "Permission error", e) }
 }
 
-private fun getDisplayFolderPath(uriString: String?, context: Context): String = if (uriString == null) "PhotoRaccord (stockage privé)" else uriString.toUri().path?.substringAfterLast(":") ?: "Dossier personnalisé"
-
 @Composable private fun ThemeButton(theme: String, currentTheme: String, onThemeChanged: (String) -> Unit, modifier: Modifier) { Button(onClick = { onThemeChanged(theme) }, modifier = modifier, colors = ButtonDefaults.buttonColors(containerColor = if (currentTheme == theme) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant, contentColor = if (currentTheme == theme) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant)) { Text(when (theme) { "AMBER" -> "Ambre"; "VIOLET" -> "Violet"; "TURQUOISE" -> "Turquoise"; else -> "Système" }) } }
-
 @Composable private fun ProjectCard(project: String, onRename: (String, String) -> Unit, onDelete: (String) -> Unit) { Card(modifier = Modifier.fillMaxWidth()) { Row(modifier = Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) { Text(project, style = MaterialTheme.typography.bodyLarge); Row { IconButton(onClick = { onRename(project, project) }) { Icon(Icons.Default.Edit, "Renommer") }; IconButton(onClick = { onDelete(project) }) { Icon(Icons.Default.Delete, "Supprimer") } } } } }
-
 private fun toggleNomediaFile(context: Context, treeUriString: String?, showInGallery: Boolean) {
     if (treeUriString == null) { ensureDefaultNomedia(context, showInGallery); return }
     try {
