@@ -14,6 +14,7 @@ import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
 
@@ -30,11 +31,7 @@ interface PhotoDao {
     @Insert
     suspend fun insert(photo: PhotoEntity)
 
-    /**
-     * Liste tous les projets, y compris ceux qui n'ont aucune photo.
-     * Pour un projet avec des photos, la date de la photo la plus récente est
-     * utilisée. Pour un projet vide, on retombe sur sa date de création.
-     */
+    /** Liste tous les projets, y compris ceux qui n'ont aucune photo. */
     @Query("""
         SELECT p.nom
         FROM projets p
@@ -42,7 +39,9 @@ interface PhotoDao {
         GROUP BY p.nom, p.createdAt
         ORDER BY
             COALESCE(
-                MAX(substr(ph.date, 7, 4) || substr(ph.date, 4, 2) || substr(ph.date, 1, 2) || substr(ph.date, 12, 5)),
+                MAX(CASE WHEN length(ph.date) >= 16 THEN
+                    substr(ph.date, 7, 4) || substr(ph.date, 4, 2) || substr(ph.date, 1, 2) || substr(ph.date, 12, 5)
+                END),
                 strftime('%Y%m%d%H%M', p.createdAt / 1000, 'unixepoch')
             ) DESC,
             p.nom ASC
@@ -62,13 +61,25 @@ interface PhotoDao {
     suspend fun renameProjetPhotos(oldName: String, newName: String)
 
     @Query("UPDATE projets SET nom = :newName WHERE nom = :oldName")
-    suspend fun renameProjet(oldName: String, newName: String)
+    suspend fun renameProjetRecord(oldName: String, newName: String)
+
+    @Transaction
+    suspend fun renameProjet(oldName: String, newName: String) {
+        renameProjetPhotos(oldName, newName)
+        renameProjetRecord(oldName, newName)
+    }
 
     @Query("DELETE FROM photos WHERE projet = :projectName")
     suspend fun deleteProjetPhotos(projectName: String)
 
     @Query("DELETE FROM projets WHERE nom = :projectName")
-    suspend fun deleteProjet(projectName: String)
+    suspend fun deleteProjetRecord(projectName: String)
+
+    @Transaction
+    suspend fun deleteProjet(projectName: String) {
+        deleteProjetPhotos(projectName)
+        deleteProjetRecord(projectName)
+    }
 
     @Update
     suspend fun update(photo: PhotoEntity)
@@ -76,10 +87,9 @@ interface PhotoDao {
     @Delete
     suspend fun deletePhotos(photos: List<PhotoEntity>)
 
-    /**
-     * Lors d'une migration depuis l'ancien modèle, les projets connus uniquement
-     * par la table photos sont créés dans la nouvelle table projets.
-     */
+    /** Migration logique : récupère les anciens projets qui n'étaient connus
+     * que par la table photos. La date de migration sert de date de création
+     * de secours pour ces projets historiques. */
     @Query("INSERT OR IGNORE INTO projets(nom, createdAt) SELECT projet, CAST(strftime('%s','now') AS INTEGER) * 1000 FROM photos WHERE projet != ''")
     suspend fun importExistingProjects()
 }
