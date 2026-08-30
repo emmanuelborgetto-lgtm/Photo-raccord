@@ -6,7 +6,7 @@ Photoraccord est une application Android conçue pour faciliter la prise et l'or
   <img src="Screenshots/Screenshot_20260830-150955_Photo-raccord.png" width="300">
   <img src="Screenshots/Screenshot_20260830-150905_Photo-raccord.png" width="300">
 </p>
-Vous pouvez trouver le fichier APK à installer ici : [PhotoRaccord V0.1](https://github.com/emmanuelborgetto-lgtm/Photo-raccord/releases/download/V0.1/photoraccord-0.1.apk) 
+Vous pouvez trouver le fichier APK à installer ici : [PhotoRaccord V0.2.0](https://github.com/emmanuelborgetto-lgtm/Photo-raccord/releases/download/v0.2.0/photoraccord-v0.2.0.apk)
 
 ## Fonctionnalités principales
 
