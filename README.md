@@ -2,6 +2,8 @@
 
 Photoraccord est une application Android conçue pour faciliter la prise et l'organisation de photos de raccord. Elle permet d'incruster directement les informations de la scène sur l'image et offre une gestion avancée du stockage local.
 
+Vous pouvez trouver le fichier APK à installer ici : [PhotoRaccord V0.1](https://github.com/emmanuelborgetto-lgtm/Photo-raccord/releases/download/V0.1/photoraccord-0.1.apk) 
+
 ## Fonctionnalités principales
 
 * **Incrustation automatique :** Ajout d'un bandeau informatif au bas des photos générées, contenant le nom du projet, la date, le décor et la séquence.
