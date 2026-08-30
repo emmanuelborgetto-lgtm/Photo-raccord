@@ -56,9 +56,7 @@ fun SettingsScreen(currentTheme: String, onThemeChanged: (String) -> Unit, onPro
             if (isDcim) {
                 pendingFolderUri = selectedUri
                 showDcimWarning = true
-            } else {
-                applySelectedFolder(context, prefs, selectedUri, showInGallery) { customTreeUri = it }
-            }
+            } else applySelectedFolder(context, prefs, selectedUri, showInGallery) { customTreeUri = it }
         }
     }
 
@@ -102,9 +100,7 @@ fun SettingsScreen(currentTheme: String, onThemeChanged: (String) -> Unit, onPro
                         Switch(checked = showInGallery, onCheckedChange = { checked ->
                             showInGallery = checked
                             prefs.edit { putBoolean(PREF_SHOW_IN_GALLERY, checked) }
-                            scope.launch(Dispatchers.IO) {
-                                if (customTreeUri == null) ensureDefaultNomedia(context, checked) else toggleNomediaFile(context, customTreeUri, checked)
-                            }
+                            scope.launch(Dispatchers.IO) { if (customTreeUri == null) ensureDefaultNomedia(context, checked) else toggleNomediaFile(context, customTreeUri, checked) }
                         })
                     }
                 }
@@ -121,10 +117,10 @@ fun SettingsScreen(currentTheme: String, onThemeChanged: (String) -> Unit, onPro
                     val allPhotos = photoDao.getAllPhotosOnce()
                     val orphans = allPhotos.filter { photo ->
                         try {
-                            context.contentResolver.openInputStream(photo.uri.toUri())?.use { true } ?: false
-                        } catch (_: Exception) { false }
-                    }.filter { photo ->
-                        try { context.contentResolver.openInputStream(photo.uri.toUri())?.use { false } ?: true } catch (_: Exception) { true }
+                            val uri = photo.uri.toUri()
+                            val exists = context.contentResolver.openInputStream(uri)?.use { true } ?: false
+                            !exists
+                        } catch (_: Exception) { true }
                     }
                     if (orphans.isNotEmpty()) photoDao.deletePhotos(orphans)
                     withContext(Dispatchers.Main) { isCleaning = false; Toast.makeText(context, "${orphans.size} référence(s) orpheline(s) supprimée(s)", Toast.LENGTH_SHORT).show() }
