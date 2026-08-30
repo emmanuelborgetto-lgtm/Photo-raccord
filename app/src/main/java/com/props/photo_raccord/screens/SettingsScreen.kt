@@ -1,27 +1,13 @@
 /*
  * Photoraccord
  * Copyright (C) 2026 Emmanuel Borgetto
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-
-
 package com.props.photo_raccord.screens
 
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Environment
 import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -45,33 +31,43 @@ import androidx.core.content.edit
 import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
 import com.props.photo_raccord.AppDatabase
+import com.props.photo_raccord.utils.ensureDefaultNomedia
+import com.props.photo_raccord.utils.getDefaultPhotoDirectory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+private const val PREFS_NAME = "photo_raccord_prefs"
+private const val PREF_STORAGE_TREE_URI = "storage_tree_uri"
+private const val PREF_SHOW_IN_GALLERY = "show_in_gallery"
+
 @Composable
 fun SettingsScreen(currentTheme: String, onThemeChanged: (String) -> Unit, onProjetRenamed: (String, String) -> Unit, onProjetDeleted: (String) -> Unit, onClose: () -> Unit) {
     val context = LocalContext.current
-    val prefs = remember { context.getSharedPreferences("photo_raccord_prefs", Context.MODE_PRIVATE) }
+    val prefs = remember { context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE) }
     val photoDao = remember { AppDatabase.getDatabase(context).photoDao() }
     val scope = rememberCoroutineScope()
-    var customTreeUri by remember { mutableStateOf(prefs.getString("storage_tree_uri", null)) }
-    var showInGallery by remember { mutableStateOf(prefs.getBoolean("show_in_gallery", true)) }
+    var customTreeUri by remember { mutableStateOf(prefs.getString(PREF_STORAGE_TREE_URI, null)) }
+    var showInGallery by remember { mutableStateOf(prefs.getBoolean(PREF_SHOW_IN_GALLERY, false)) }
+    var showDcimWarning by remember { mutableStateOf(false) }
+    var pendingFolderUri by remember { mutableStateOf<Uri?>(null) }
 
     val folderPickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
         uri?.let { selectedUri ->
-            try {
-                context.contentResolver.takePersistableUriPermission(selectedUri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-                customTreeUri = selectedUri.toString()
-                prefs.edit { putString("storage_tree_uri", selectedUri.toString()) }
-
-                scope.launch(Dispatchers.IO) {
-                    toggleNomediaFile(context, selectedUri.toString(), showInGallery)
-                }
-            } catch (e: Exception) { Log.e("Settings", "Permission error", e) }
+            val isDcim = selectedUri.path?.contains("/DCIM", ignoreCase = true) == true
+            if (isDcim) {
+                pendingFolderUri = selectedUri
+                showDcimWarning = true
+            } else applySelectedFolder(context, prefs, selectedUri, showInGallery) { customTreeUri = it }
         }
     }
-    fun getDisplayFolderPath(uriString: String?): String = uriString?.toUri()?.path?.substringAfterLast(":") ?: "DCIM (Par défaut)"
+
+    fun resetToDefault() {
+        customTreeUri = null
+        prefs.edit { remove(PREF_STORAGE_TREE_URI) }
+        scope.launch(Dispatchers.IO) { ensureDefaultNomedia(context, showInGallery) }
+    }
+
     val projets by photoDao.getDistinctProjets().collectAsState(initial = emptyList())
     var projectToRename by remember { mutableStateOf<String?>(null) }
     var newProjectName by remember { mutableStateOf("") }
@@ -79,61 +75,37 @@ fun SettingsScreen(currentTheme: String, onThemeChanged: (String) -> Unit, onPro
     var isCleaning by remember { mutableStateOf(false) }
 
     Column(modifier = Modifier.fillMaxSize().safeDrawingPadding().padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.Start,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(onClick = onClose) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Retour")
-            }
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onClose) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Retour") }
             Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                text = "PARAMÈTRES",
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                style = MaterialTheme.typography.titleLarge
-            )
+            Text("PARAMÈTRES", maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleLarge)
         }
         HorizontalDivider()
         Column(modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Text("Palette de couleurs", style = MaterialTheme.typography.titleMedium)
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ThemeButton("AMBER", currentTheme, onThemeChanged, Modifier.weight(1f))
-                    ThemeButton("VIOLET", currentTheme, onThemeChanged, Modifier.weight(1f))
-                }
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ThemeButton("TURQUOISE", currentTheme, onThemeChanged, Modifier.weight(1f))
-                    ThemeButton("SYSTEM", currentTheme, onThemeChanged, Modifier.weight(1f))
-                }
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) { ThemeButton("AMBER", currentTheme, onThemeChanged, Modifier.weight(1f)); ThemeButton("VIOLET", currentTheme, onThemeChanged, Modifier.weight(1f)) }
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) { ThemeButton("TURQUOISE", currentTheme, onThemeChanged, Modifier.weight(1f)); ThemeButton("SYSTEM", currentTheme, onThemeChanged, Modifier.weight(1f)) }
             }
             HorizontalDivider()
             Text("Dossier de stockage", style = MaterialTheme.typography.titleMedium)
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Dossier actuel : ${getDisplayFolderPath(customTreeUri)}", style = MaterialTheme.typography.bodyMedium)
+                    Text("Dossier actuel : ${getDisplayFolderPath(customTreeUri, context)}", style = MaterialTheme.typography.bodyMedium)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                         OutlinedButton(onClick = { folderPickerLauncher.launch(null) }, modifier = Modifier.weight(1f)) { Text("Changer le dossier") }
-                        if (!customTreeUri.isNullOrEmpty()) IconButton(onClick = { customTreeUri = null; prefs.edit { remove("storage_tree_uri") } }) { Icon(Icons.Default.Close, "Réinitialiser") }
+                        if (!customTreeUri.isNullOrEmpty()) IconButton(onClick = { resetToDefault() }) { Icon(Icons.Default.Close, "Réinitialiser") }
                     }
                     HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                         Text("Afficher les photos dans la galerie", style = MaterialTheme.typography.bodyMedium)
-                        Switch(
-                            checked = showInGallery,
-                            onCheckedChange = { checked ->
-                                showInGallery = checked
-                                prefs.edit { putBoolean("show_in_gallery", checked) }
-                                scope.launch(Dispatchers.IO) {
-                                    toggleNomediaFile(context, customTreeUri, checked)
-                                }
+                        Switch(checked = showInGallery, onCheckedChange = { checked ->
+                            showInGallery = checked
+                            prefs.edit { putBoolean(PREF_SHOW_IN_GALLERY, checked) }
+                            scope.launch(Dispatchers.IO) {
+                                if (customTreeUri == null) ensureDefaultNomedia(context, checked) else toggleNomediaFile(context, customTreeUri, checked)
                             }
-                        )
+                        })
                     }
                 }
             }
@@ -147,13 +119,7 @@ fun SettingsScreen(currentTheme: String, onThemeChanged: (String) -> Unit, onPro
                 isCleaning = true
                 scope.launch(Dispatchers.IO) {
                     val allPhotos = photoDao.getAllPhotosOnce()
-                    val orphans = allPhotos.filter { photo ->
-                        try {
-                            val uri = photo.uri.toUri()
-                            val exists = context.contentResolver.openInputStream(uri)?.use { true } ?: false
-                            !exists
-                        } catch (_: Exception) { true }
-                    }
+                    val orphans = allPhotos.filter { photo -> try { context.contentResolver.openInputStream(photo.uri.toUri())?.use { true } ?: false; false } catch (_: Exception) { true } }
                     if (orphans.isNotEmpty()) photoDao.deletePhotos(orphans)
                     withContext(Dispatchers.Main) { isCleaning = false; Toast.makeText(context, "${orphans.size} référence(s) orpheline(s) supprimée(s)", Toast.LENGTH_SHORT).show() }
                 }
@@ -161,78 +127,43 @@ fun SettingsScreen(currentTheme: String, onThemeChanged: (String) -> Unit, onPro
         }
     }
 
-    projectToRename?.let { oldName ->
-        AlertDialog(onDismissRequest = { projectToRename = null }, title = { Text("Renommer le projet") }, text = {
-            OutlinedTextField(value = newProjectName, onValueChange = { newProjectName = it }, label = { Text("Nouveau nom") }, singleLine = true)
-        }, confirmButton = { TextButton(onClick = { if (newProjectName.isNotBlank() && newProjectName != oldName) scope.launch { photoDao.renameProjet(oldName, newProjectName); onProjetRenamed(oldName, newProjectName); projectToRename = null } }, enabled = newProjectName.isNotBlank() && newProjectName != oldName) { Text("Valider") } },
-            dismissButton = { TextButton(onClick = { projectToRename = null }) { Text("Annuler") } })
-    }
+    projectToRename?.let { oldName -> AlertDialog(onDismissRequest = { projectToRename = null }, title = { Text("Renommer le projet") }, text = { OutlinedTextField(value = newProjectName, onValueChange = { newProjectName = it }, label = { Text("Nouveau nom") }, singleLine = true) }, confirmButton = { TextButton(onClick = { if (newProjectName.isNotBlank() && newProjectName != oldName) scope.launch { photoDao.renameProjet(oldName, newProjectName); onProjetRenamed(oldName, newProjectName); projectToRename = null } }, enabled = newProjectName.isNotBlank() && newProjectName != oldName) { Text("Valider") } }, dismissButton = { TextButton(onClick = { projectToRename = null }) { Text("Annuler") } }) }
+    projectToDelete?.let { proj -> AlertDialog(onDismissRequest = { projectToDelete = null }, title = { Text("Supprimer le projet ?") }, text = { Text("Toutes les références des photos de \"$proj\" seront supprimées.") }, confirmButton = { TextButton(onClick = { scope.launch { photoDao.deleteProjet(proj); onProjetDeleted(proj); projectToDelete = null } }) { Text("Supprimer", color = MaterialTheme.colorScheme.error) } }, dismissButton = { TextButton(onClick = { projectToDelete = null }) { Text("Annuler") } }) }
 
-    projectToDelete?.let { proj ->
-        AlertDialog(onDismissRequest = { projectToDelete = null }, title = { Text("Supprimer le projet ?") }, text = { Text("Toutes les références des photos de \"$proj\" seront supprimées.") },
-            confirmButton = { TextButton(onClick = { scope.launch { photoDao.deleteProjet(proj); onProjetDeleted(proj); projectToDelete = null } }) { Text("Supprimer", color = MaterialTheme.colorScheme.error) } },
-            dismissButton = { TextButton(onClick = { projectToDelete = null }) { Text("Annuler") } })
-    }
-}
-
-@Composable private fun ThemeButton(theme: String, currentTheme: String, onThemeChanged: (String) -> Unit, modifier: Modifier) {
-    Button(onClick = { onThemeChanged(theme) }, modifier = modifier, colors = ButtonDefaults.buttonColors(
-        containerColor = if (currentTheme == theme) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-        contentColor = if (currentTheme == theme) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
-    )) { Text(when (theme) { "AMBER" -> "Ambre"; "VIOLET" -> "Violet"; "TURQUOISE" -> "Turquoise"; else -> "Système" }) }
-}
-
-@Composable private fun ProjectCard(project: String, onRename: (String, String) -> Unit, onDelete: (String) -> Unit) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Row(modifier = Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Text(project, style = MaterialTheme.typography.bodyLarge)
-            Row {
-                IconButton(onClick = { onRename(project, project) }) { Icon(Icons.Default.Edit, "Renommer") }
-                IconButton(onClick = { onDelete(project) }) { Icon(Icons.Default.Delete, "Supprimer") }
-            }
-        }
+    if (showDcimWarning) {
+        AlertDialog(
+            onDismissRequest = { showDcimWarning = false; pendingFolderUri = null },
+            title = { Text("Attention : dossier DCIM") },
+            text = { Text("Vous avez sélectionné le dossier DCIM. Le masquage des photos dans la galerie ne fonctionnera pas de manière fiable dans ce dossier. Pour masquer efficacement les photos, choisissez plutôt le dossier PhotoRaccord proposé par défaut.") },
+            confirmButton = { TextButton(onClick = {
+                pendingFolderUri?.let { selected -> applySelectedFolder(context, prefs, selected, showInGallery) { customTreeUri = it } }
+                showDcimWarning = false; pendingFolderUri = null
+            }) { Text("Utiliser quand même") } },
+            dismissButton = { TextButton(onClick = { showDcimWarning = false; pendingFolderUri = null }) { Text("Annuler") } }
+        )
     }
 }
+
+private fun applySelectedFolder(context: Context, prefs: android.content.SharedPreferences, selectedUri: Uri, showInGallery: Boolean, onApplied: (String) -> Unit) {
+    try {
+        context.contentResolver.takePersistableUriPermission(selectedUri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        prefs.edit { putString(PREF_STORAGE_TREE_URI, selectedUri.toString()) }
+        onApplied(selectedUri.toString())
+        Thread { toggleNomediaFile(context, selectedUri.toString(), showInGallery) }.start()
+    } catch (e: Exception) { Log.e("Settings", "Permission error", e) }
+}
+
+private fun getDisplayFolderPath(uriString: String?, context: Context): String = if (uriString == null) "PhotoRaccord (stockage privé)" else uriString.toUri().path?.substringAfterLast(":") ?: "Dossier personnalisé"
+
+@Composable private fun ThemeButton(theme: String, currentTheme: String, onThemeChanged: (String) -> Unit, modifier: Modifier) { Button(onClick = { onThemeChanged(theme) }, modifier = modifier, colors = ButtonDefaults.buttonColors(containerColor = if (currentTheme == theme) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant, contentColor = if (currentTheme == theme) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant)) { Text(when (theme) { "AMBER" -> "Ambre"; "VIOLET" -> "Violet"; "TURQUOISE" -> "Turquoise"; else -> "Système" }) } }
+
+@Composable private fun ProjectCard(project: String, onRename: (String, String) -> Unit, onDelete: (String) -> Unit) { Card(modifier = Modifier.fillMaxWidth()) { Row(modifier = Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) { Text(project, style = MaterialTheme.typography.bodyLarge); Row { IconButton(onClick = { onRename(project, project) }) { Icon(Icons.Default.Edit, "Renommer") }; IconButton(onClick = { onDelete(project) }) { Icon(Icons.Default.Delete, "Supprimer") } } } } }
 
 private fun toggleNomediaFile(context: Context, treeUriString: String?, showInGallery: Boolean) {
-    if (treeUriString != null) {
-        // Logique existante pour un dossier personnalisé (SAF)
-        try {
-            val rootDir = DocumentFile.fromTreeUri(context, treeUriString.toUri())
-            if (rootDir != null && rootDir.exists()) {
-                val nomediaFile = rootDir.findFile(".nomedia")
-                if (showInGallery) {
-                    nomediaFile?.delete()
-                } else {
-                    if (nomediaFile == null) {
-                        rootDir.createFile("*/*", ".nomedia")
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            Log.e("Settings", "Erreur lors de la modification de .nomedia (SAF)", e)
-        }
-    } else {
-        // Nouvelle logique pour le dossier par défaut (DCIM/PhotoRaccord)
-        try {
-            val dcimDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DCIM)
-            val photoRaccordDir = java.io.File(dcimDir, "PhotoRaccord")
-
-            // Si le dossier n'existe pas, on le crée uniquement si on veut y cacher des choses
-            if (!photoRaccordDir.exists()) {
-                if (!showInGallery) photoRaccordDir.mkdirs()
-                else return // Rien à faire si on veut afficher et que le dossier n'existe pas
-            }
-
-            val nomediaFile = java.io.File(photoRaccordDir, ".nomedia")
-
-            if (showInGallery) {
-                if (nomediaFile.exists()) nomediaFile.delete()
-            } else {
-                if (!nomediaFile.exists()) nomediaFile.createNewFile()
-            }
-        } catch (e: Exception) {
-            Log.e("Settings", "Erreur lors de la modification de .nomedia (Défaut)", e)
-        }
-    }
+    if (treeUriString == null) { ensureDefaultNomedia(context, showInGallery); return }
+    try {
+        val rootDir = DocumentFile.fromTreeUri(context, treeUriString.toUri()) ?: return
+        val nomediaFile = rootDir.findFile(".nomedia")
+        if (showInGallery) nomediaFile?.delete() else if (nomediaFile == null) rootDir.createFile("application/octet-stream", ".nomedia")
+    } catch (e: Exception) { Log.e("Settings", "Erreur .nomedia SAF", e) }
 }
