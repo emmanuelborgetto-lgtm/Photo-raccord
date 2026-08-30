@@ -35,42 +35,15 @@ fun updatePhotoBanner(context: Context, photoUriString: String, projet: String, 
         val photoHeight = (totalHeight / 1.08f).toInt()
         val bannerHeight = totalHeight - photoHeight
         if (photoHeight <= 0 || bannerHeight <= 0) return
+
         val photoOnly = createBitmap(sourceBitmap, 0, 0, totalWidth, photoHeight)
         val updatedBitmap = createBitmap(totalWidth, totalHeight, android.graphics.Bitmap.Config.ARGB_8888)
         val canvas = android.graphics.Canvas(updatedBitmap)
         canvas.drawBitmap(photoOnly, 0f, 0f, null)
-        val paddingX = totalWidth * 0.02f
-        val textSizeTitle = totalWidth * 0.035f
-        val textSizeDate = totalWidth * 0.028f
-        val textYTitle = photoHeight + (bannerHeight * 0.45f)
-        val textYDate = photoHeight + (bannerHeight * 0.85f)
-        val textYCenterRight = photoHeight + (bannerHeight * 0.62f)
-        val paintBg = android.graphics.Paint().apply { color = android.graphics.Color.BLACK }
-        val paintProjet = android.graphics.Paint().apply {
-            color = android.graphics.Color.GRAY; textSize = textSizeTitle
-            typeface = android.graphics.Typeface.DEFAULT_BOLD; isAntiAlias = true
-            textAlign = android.graphics.Paint.Align.LEFT
-        }
-        val paintDate = android.graphics.Paint().apply {
-            color = android.graphics.Color.WHITE; textSize = textSizeDate
-            typeface = android.graphics.Typeface.DEFAULT; isAntiAlias = true
-            textAlign = android.graphics.Paint.Align.LEFT
-        }
-        val paintDecor = android.graphics.Paint().apply {
-            color = android.graphics.Color.WHITE; textSize = textSizeTitle
-            typeface = android.graphics.Typeface.DEFAULT_BOLD; isAntiAlias = true
-            textAlign = android.graphics.Paint.Align.CENTER
-        }
-        val paintSequence = android.graphics.Paint().apply {
-            color = android.graphics.Color.WHITE; textSize = textSizeTitle
-            typeface = android.graphics.Typeface.DEFAULT_BOLD; isAntiAlias = true
-            textAlign = android.graphics.Paint.Align.RIGHT
-        }
-        canvas.drawRect(0f, photoHeight.toFloat(), totalWidth.toFloat(), totalHeight.toFloat(), paintBg)
-        canvas.drawText(projet, paddingX, textYTitle, paintProjet)
-        canvas.drawText(date, paddingX, textYDate, paintDate)
-        canvas.drawText("Décor: $newDecor", totalWidth / 2f, textYCenterRight, paintDecor)
-        canvas.drawText("Seq: $newSequence", totalWidth - paddingX, textYCenterRight, paintSequence)
+
+        // Dessin du bandeau via la fonction commune (voir BannerUtils.kt)
+        drawInfoBanner(canvas, totalWidth, photoHeight.toFloat(), totalHeight.toFloat(), projet, date, newDecor, newSequence)
+
         context.contentResolver.openOutputStream(uri, "wt")?.use { out -> updatedBitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 95, out) }
         photoOnly.recycle(); updatedBitmap.recycle(); sourceBitmap.recycle()
     } catch (e: Exception) { Log.e("FileUtils", "Erreur bandeau", e) }

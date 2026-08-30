@@ -632,8 +632,21 @@ private fun ZoomableImage(photo: PhotoEntity, isCurrentPage: Boolean, onZoomChan
         return Offset(proposedOffset.x.coerceIn(-maxX, maxX), proposedOffset.y.coerceIn(-maxY, maxY))
     }
 
+    // Taille de décodage plafonnée à ~2x la résolution d'écran : suffisant pour le zoom x5
+    // tout en évitant de décoder des bitmaps inutilement lourds à chaque swipe du pager
+    // (cause probable du message "Image decoding logging dropped!" en logcat).
+    val displayMetrics = LocalContext.current.resources.displayMetrics
+    val decodeWidth = displayMetrics.widthPixels * 2
+    val decodeHeight = displayMetrics.heightPixels * 2
+
     AsyncImage(
-        model = ImageRequest.Builder(LocalContext.current).data(photo.uri).memoryCacheKey("${photo.uri}_${photo.sequence}_${photo.decor}").diskCacheKey("${photo.uri}_${photo.sequence}_${photo.decor}").crossfade(true).build(),
+        model = ImageRequest.Builder(LocalContext.current)
+            .data(photo.uri)
+            .size(decodeWidth, decodeHeight)
+            .memoryCacheKey("${photo.uri}_${photo.sequence}_${photo.decor}")
+            .diskCacheKey("${photo.uri}_${photo.sequence}_${photo.decor}")
+            .crossfade(true)
+            .build(),
         contentDescription = "Photo plein écran",
         modifier = Modifier.fillMaxSize().onSizeChanged { containerSize = it }
             .pointerInput(Unit) {

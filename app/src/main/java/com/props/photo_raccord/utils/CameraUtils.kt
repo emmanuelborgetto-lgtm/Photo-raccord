@@ -23,9 +23,6 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
-import android.graphics.Color
-import android.graphics.Paint
-import android.graphics.Typeface
 import android.os.Build
 import android.provider.MediaStore
 import android.util.Log
@@ -41,6 +38,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.concurrent.Executor
+import androidx.core.net.toUri
 
 fun takeAndProcessPhoto(
     context: Context,
@@ -99,25 +97,8 @@ fun takeAndProcessPhoto(
                     val height = bitmap.height
                     val bannerHeight = (height * 0.08f).toInt().coerceAtLeast(1)
 
-                    val paintBg = Paint().apply { color = Color.BLACK }
-                    canvas.drawRect(0f, (height - bannerHeight).toFloat(), width.toFloat(), height.toFloat(), paintBg)
-
-                    val paddingX = width * 0.02f
-                    val textSizeTitle = width * 0.035f
-                    val textSizeDate = width * 0.028f
-                    val textYTitle = height - (bannerHeight * 0.55f)
-                    val textYDate = height - (bannerHeight * 0.2f)
-                    val textYCenterRight = height - (bannerHeight * 0.38f)
-
-                    val paintProjet = Paint().apply { color = Color.GRAY; textSize = textSizeTitle; typeface = Typeface.DEFAULT_BOLD; isAntiAlias = true; textAlign = Paint.Align.LEFT }
-                    val paintDate = Paint().apply { color = Color.WHITE; textSize = textSizeDate; typeface = Typeface.DEFAULT; isAntiAlias = true; textAlign = Paint.Align.LEFT }
-                    val paintDecor = Paint().apply { color = Color.WHITE; textSize = textSizeTitle; typeface = Typeface.DEFAULT_BOLD; isAntiAlias = true; textAlign = Paint.Align.CENTER }
-                    val paintSequence = Paint().apply { color = Color.WHITE; textSize = textSizeTitle; typeface = Typeface.DEFAULT_BOLD; isAntiAlias = true; textAlign = Paint.Align.RIGHT }
-
-                    canvas.drawText(safeProjet, paddingX, textYTitle, paintProjet)
-                    canvas.drawText(currentDate, paddingX, textYDate, paintDate)
-                    canvas.drawText("Décor: $decor", width / 2f, textYCenterRight, paintDecor)
-                    canvas.drawText("Seq: $sequence", width - paddingX, textYCenterRight, paintSequence)
+                    // Dessin du bandeau via la fonction commune (voir BannerUtils.kt)
+                    drawInfoBanner(canvas, width, (height - bannerHeight).toFloat(), height.toFloat(), safeProjet, currentDate, decor, sequence)
 
                     // 4. Sauvegarde dans le dossier approprié
                     var finalUri: android.net.Uri? = null
@@ -125,7 +106,7 @@ fun takeAndProcessPhoto(
 
                     if (!customTreeUriString.isNullOrEmpty()) {
                         try {
-                            val treeUri = android.net.Uri.parse(customTreeUriString)
+                            val treeUri = customTreeUriString.toUri()
                             val rootDir = androidx.documentfile.provider.DocumentFile.fromTreeUri(context, treeUri)
                             var projectDir = rootDir?.findFile(safeProjet)
                             if (projectDir == null) {
@@ -172,7 +153,7 @@ fun takeAndProcessPhoto(
                     if (!showInGallery) {
                         if (!customTreeUriString.isNullOrEmpty()) {
                             try {
-                                val treeUri = android.net.Uri.parse(customTreeUriString)
+                                val treeUri = customTreeUriString.toUri()
                                 val rootDir = androidx.documentfile.provider.DocumentFile.fromTreeUri(context, treeUri)
                                 if (rootDir != null && rootDir.findFile(".nomedia") == null) {
                                     rootDir.createFile("application/octet-stream", ".nomedia")

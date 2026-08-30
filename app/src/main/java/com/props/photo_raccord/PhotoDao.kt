@@ -24,10 +24,17 @@ import androidx.room.Query
 import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
 
+// Résultat de la requête groupée utilisée par l'écran de sélection des projets :
+// remplace N souscriptions Flow individuelles (une par projet) par une seule requête.
+data class ProjetCount(val projet: String, val count: Int)
+
 @Dao
 interface PhotoDao {
-    @Query("SELECT COUNT(*) FROM photos WHERE projet = :projet")
-    fun getPhotoCountByProject(projet: String): Flow<Int>
+    // Compte les photos de tous les projets en une seule requête groupée (évite le
+    // N+1 : une requête par projet appelée en boucle dans la liste des projets).
+    @Query("SELECT projet, COUNT(*) as count FROM photos GROUP BY projet")
+    fun getPhotoCountsByProjet(): Flow<List<ProjetCount>>
+
     @Query("SELECT * FROM photos WHERE projet = :projet")
     fun getPhotosParProjet(projet: String): Flow<List<PhotoEntity>>
 

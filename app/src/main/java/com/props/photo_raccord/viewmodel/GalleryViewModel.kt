@@ -37,13 +37,13 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 
 // Options de tri pour la galerie
-enum class SortOption() {
-    DATE_DESC(),
-    DATE_ASC(),
-    SEQUENCE_ASC(),
-    SEQUENCE_DESC(),
-    DECOR_ASC(),
-    DECOR_DESC()
+enum class SortOption {
+    DATE_DESC,
+    DATE_ASC,
+    SEQUENCE_ASC,
+    SEQUENCE_DESC,
+    DECOR_ASC,
+    DECOR_DESC
 }
 
 class GalleryViewModel(private val photoDao: PhotoDao) : ViewModel() {

@@ -87,6 +87,12 @@ fun ProjectSelectionScreen(
     val context = LocalContext.current
     val photoDao = remember { AppDatabase.getDatabase(context).photoDao() }
     val projetsExistants by photoDao.getDistinctProjets().collectAsState(initial = emptyList())
+
+    // Une seule requête groupée pour les compteurs de tous les projets, au lieu
+    // d'ouvrir un Flow de comptage par ligne de la liste (N+1 sur le scroll).
+    val photoCounts by photoDao.getPhotoCountsByProjet().collectAsState(initial = emptyList())
+    val countsByProjet = remember(photoCounts) { photoCounts.associate { it.projet to it.count } }
+
     var inputProjet by remember { mutableStateOf("") }
 
     val versionName = remember(context) {
@@ -228,7 +234,7 @@ fun ProjectSelectionScreen(
             modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            itemsIndexed(projetsExistants) { index, item ->
+            itemsIndexed(projetsExistants, key = { _, item -> item }) { index, item ->
                 val interactionSource = remember { MutableInteractionSource() }
                 val isPressed by interactionSource.collectIsPressedAsState()
 
@@ -238,7 +244,7 @@ fun ProjectSelectionScreen(
                     MaterialTheme.colorScheme.surfaceVariant
                 }
 
-                val photoCount by photoDao.getPhotoCountByProject(item).collectAsState(initial = 0)
+                val photoCount = countsByProjet[item] ?: 0
 
                 Card(
                     onClick = { onProjectSelected(item) },

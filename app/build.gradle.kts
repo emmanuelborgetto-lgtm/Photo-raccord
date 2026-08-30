@@ -28,9 +28,17 @@ android {
 
     buildTypes {
         release {
+            // Optimisation R8 activée : réduit la taille de l'APK et accélère le code
+            // (auparavant désactivée, ce qui annulait tout l'intérêt du build release).
             optimization {
-                enable = false
+                enable = true
             }
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
         }
     }
     compileOptions {

@@ -198,7 +198,7 @@ private fun toggleNomediaFile(context: Context, treeUriString: String?, showInGa
     if (treeUriString != null) {
         // Logique existante pour un dossier personnalisé (SAF)
         try {
-            val rootDir = DocumentFile.fromTreeUri(context, Uri.parse(treeUriString))
+            val rootDir = DocumentFile.fromTreeUri(context, treeUriString.toUri())
             if (rootDir != null && rootDir.exists()) {
                 val nomediaFile = rootDir.findFile(".nomedia")
                 if (showInGallery) {

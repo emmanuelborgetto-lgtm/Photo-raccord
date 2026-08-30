@@ -71,21 +71,20 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
 import com.props.photo_raccord.AppDatabase
 import com.props.photo_raccord.utils.takeAndProcessPhoto
-import kotlinx.coroutines.CoroutineScope
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import kotlin.time.Duration.Companion.milliseconds
 
 @Composable
 fun CameraScreen(projet: String, sequence: String, decor: String, onClose: () -> Unit) {
     val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     var hasPermission by remember { mutableStateOf(false) }
     var notificationMessage by remember { mutableStateOf<String?>(null) }
 
@@ -110,7 +109,7 @@ fun CameraScreen(projet: String, sequence: String, decor: String, onClose: () ->
 
     LaunchedEffect(notificationMessage) {
         if (notificationMessage != null) {
-            kotlinx.coroutines.delay(2000)
+            kotlinx.coroutines.delay(2000.milliseconds)
             notificationMessage = null
         }
     }
@@ -182,8 +181,9 @@ fun CameraPreview(
     val coroutineScope = rememberCoroutineScope()
     val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
 
-    // État pour la caméra et le zoom
+    // État pour la caméra, le zoom, et le provider déjà résolu (voir DisposableEffect ci-dessous)
     var camera: Camera? by remember { mutableStateOf(null) }
+    var cameraProvider: ProcessCameraProvider? by remember { mutableStateOf(null) }
     var minZoom by remember { mutableFloatStateOf(1f) }
     var maxZoom by remember { mutableFloatStateOf(5f) }
 
@@ -196,18 +196,21 @@ fun CameraPreview(
                 if (!cameraExecutor.awaitTermination(1, TimeUnit.SECONDS)) {
                     cameraExecutor.shutdownNow()
                 }
-            } catch (e: InterruptedException) {
+            } catch (_: InterruptedException) {
                 cameraExecutor.shutdownNow()
                 Thread.currentThread().interrupt()
             }
 
-            // 2. Libération de la caméra
-            camera?.let { cam ->
-                try {
-                    ProcessCameraProvider.getInstance(context).get().unbindAll()
-                } catch (e: Exception) {
-                    // Ignorer les erreurs de libération
-                }
+            // 2. Libération de la caméra.
+            // IMPORTANT : on réutilise le provider déjà résolu (stocké lors du bindToLifecycle)
+            // au lieu de rappeler ProcessCameraProvider.getInstance(context).get(), qui est un
+            // appel BLOQUANT sur le thread appelant. Comme onDispose s'exécute sur le thread
+            // principal, ce .get() pouvait geler l'UI le temps que CameraX libère le matériel
+            // caméra (c'est la cause probable des "Skipped N frames" au retour de cet écran).
+            try {
+                cameraProvider?.unbindAll()
+            } catch (_: Exception) {
+                // Ignorer les erreurs de libération
             }
         }
     }
@@ -264,17 +267,20 @@ fun CameraPreview(
 
                 cameraProviderFuture.addListener(
                     {
-                        val cameraProvider = cameraProviderFuture.get()
+                        // .get() est sans risque ici : le listener n'est appelé qu'APRÈS
+                        // résolution du Future, donc l'appel ne bloque pas.
+                        val provider = cameraProviderFuture.get()
+                        cameraProvider = provider
                         val preview = Preview.Builder().build().apply {
                             surfaceProvider = previewView.surfaceProvider
                         }
 
                         try {
                             // Désassocier les anciennes liaisons
-                            cameraProvider.unbindAll()
+                            provider.unbindAll()
 
                             // Créer une nouvelle liaison
-                            camera = cameraProvider.bindToLifecycle(
+                            camera = provider.bindToLifecycle(
                                 lifecycleOwner,
                                 CameraSelector.DEFAULT_BACK_CAMERA,
                                 preview,
