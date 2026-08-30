@@ -6,16 +6,7 @@
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-
 package com.props.photo_raccord
 
 import android.content.Context
@@ -25,7 +16,7 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
-@Database(entities = [PhotoEntity::class], version = 3) // Passage à la version 3 (ajout d'index)
+@Database(entities = [PhotoEntity::class, ProjectEntity::class], version = 4)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun photoDao(): PhotoDao
 
@@ -33,19 +24,23 @@ abstract class AppDatabase : RoomDatabase() {
         @Volatile
         private var INSTANCE: AppDatabase? = null
 
-        // Script de migration de la version 1 vers 2
         private val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE photos ADD COLUMN date TEXT NOT NULL DEFAULT ''")
             }
         }
 
-        // Script de migration de la version 2 vers 3 : ajout des index pour accélérer
-        // les requêtes filtrées par "projet" et par "projet" + "decor".
         private val MIGRATION_2_3 = object : Migration(2, 3) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_photos_projet ON photos(projet)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_photos_projet_decor ON photos(projet, decor)")
+            }
+        }
+
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS projets (nom TEXT NOT NULL PRIMARY KEY, createdAt INTEGER NOT NULL)")
+                db.execSQL("INSERT OR IGNORE INTO projets(nom, createdAt) SELECT projet, CAST(strftime('%s','now') AS INTEGER) * 1000 FROM photos WHERE projet != ''")
             }
         }
 
@@ -56,7 +51,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "photo_raccord_db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3) // Ajout des migrations
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                     .build()
                 INSTANCE = instance
                 instance
