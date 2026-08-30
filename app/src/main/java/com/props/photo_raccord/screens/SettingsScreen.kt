@@ -38,7 +38,7 @@ private const val PREF_STORAGE_TREE_URI = "storage_tree_uri"
 private const val PREF_SHOW_IN_GALLERY = "show_in_gallery"
 
 @Composable
-fun SettingsScreen(currentTheme: String, onThemeChanged: (String) -> Unit, onProjetRenamed: (String, String) -> Unit, onProjetDeleted: (String) -> Unit, onClose: () -> Unit) {
+fun SettingsScreen(onThemeChanged: (String) -> Unit, onProjetRenamed: (String, String) -> Unit, onProjetDeleted: (String) -> Unit, onClose: () -> Unit) {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE) }
     val photoDao = remember { AppDatabase.getDatabase(context).photoDao() }
@@ -89,13 +89,13 @@ fun SettingsScreen(currentTheme: String, onThemeChanged: (String) -> Unit, onPro
                 Text("Palette de couleurs", style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.height(8.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ThemeButton("AMBER", currentTheme, onThemeChanged, Modifier.weight(1f))
-                    ThemeButton("VIOLET", currentTheme, onThemeChanged, Modifier.weight(1f))
+                    ThemeButton("AMBER", onThemeChanged, Modifier.weight(1f))
+                    ThemeButton("VIOLET", onThemeChanged, Modifier.weight(1f))
                 }
                 Spacer(Modifier.height(8.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ThemeButton("TURQUOISE", currentTheme, onThemeChanged, Modifier.weight(1f))
-                    ThemeButton("SYSTEM", currentTheme, onThemeChanged, Modifier.weight(1f))
+                    ThemeButton("TURQUOISE", onThemeChanged, Modifier.weight(1f))
+                    ThemeButton("SYSTEM", onThemeChanged, Modifier.weight(1f))
                 }
             }
             item {
@@ -152,7 +152,7 @@ fun SettingsScreen(currentTheme: String, onThemeChanged: (String) -> Unit, onPro
                             Toast.makeText(context, "${orphans.size} référence(s) orpheline(s) supprimée(s)", Toast.LENGTH_SHORT).show()
                         }
                     }
-                }, enabled = !isCleaning, Modifier.fillMaxWidth()) {
+                }, enabled = !isCleaning, modifier = Modifier.fillMaxWidth()) {
                     Text(if (isCleaning) "Nettoyage en cours..." else "Nettoyer les références supprimées")
                 }
             }
@@ -160,7 +160,7 @@ fun SettingsScreen(currentTheme: String, onThemeChanged: (String) -> Unit, onPro
     }
 
     projectToRename?.let { oldName ->
-        AlertDialog(onDismissRequest = { projectToRename = null }, title = { Text("Renommer le projet") }, text = { OutlinedTextField(value = newProjectName, onValueChange = { newProjectName = it }, label = { Text("Nouveau nom") }, singleLine = true), }, confirmButton = { TextButton(onClick = { if (newProjectName.isNotBlank() && newProjectName != oldName) scope.launch { photoDao.renameProjet(oldName, newProjectName); onProjetRenamed(oldName, newProjectName); projectToRename = null } }) { Text("Valider") } }, dismissButton = { TextButton(onClick = { projectToRename = null }) { Text("Annuler") } })
+        AlertDialog(onDismissRequest = { projectToRename = null }, title = { Text("Renommer le projet") }, text = { OutlinedTextField(value = newProjectName, onValueChange = { newProjectName = it }, label = { Text("Nouveau nom") }, singleLine = true) }, confirmButton = { TextButton(onClick = { if (newProjectName.isNotBlank() && newProjectName != oldName) scope.launch { photoDao.renameProjet(oldName, newProjectName); onProjetRenamed(oldName, newProjectName); projectToRename = null } }) { Text("Valider") } }, dismissButton = { TextButton(onClick = { projectToRename = null }) { Text("Annuler") } })
     }
     projectToDelete?.let { proj ->
         AlertDialog(onDismissRequest = { projectToDelete = null }, title = { Text("Supprimer le projet ?") }, text = { Text("Toutes les références des photos de \"$proj\" seront supprimées.") }, confirmButton = { TextButton(onClick = { scope.launch { photoDao.deleteProjet(proj); onProjetDeleted(proj); projectToDelete = null } }) { Text("Supprimer", color = MaterialTheme.colorScheme.error) } }, dismissButton = { TextButton(onClick = { projectToDelete = null }) { Text("Annuler") } })
@@ -206,7 +206,7 @@ private fun applySelectedFolderAsync(context: Context, prefs: android.content.Sh
 
 private fun getDisplayFolderPath(uriString: String): String = uriString.toUri().path?.substringAfterLast(":") ?: "Dossier personnalisé"
 
-@Composable private fun ThemeButton(theme: String, currentTheme: String, onThemeChanged: (String) -> Unit, modifier: Modifier) { Button(onClick = { onThemeChanged(theme) }, modifier = modifier) { Text(when(theme) { "AMBER" -> "Ambre"; "VIOLET" -> "Violet"; "TURQUOISE" -> "Turquoise"; else -> "Système" }) } }
+@Composable private fun ThemeButton(theme: String, onThemeChanged: (String) -> Unit, modifier: Modifier) { Button(onClick = { onThemeChanged(theme) }, modifier = modifier) { Text(when(theme) { "AMBER" -> "Ambre"; "VIOLET" -> "Violet"; "TURQUOISE" -> "Turquoise"; else -> "Système" }) } }
 
 @Composable private fun ProjectCard(project: String, onRename: (String, String) -> Unit, onDelete: (String) -> Unit) { Card(Modifier.fillMaxWidth()) { Row(Modifier.fillMaxWidth().padding(12.dp), Arrangement.SpaceBetween, Alignment.CenterVertically) { Text(project); Row { IconButton(onClick = { onRename(project, project) }) { Icon(Icons.Default.Edit, "Renommer") }; IconButton(onClick = { onDelete(project) }) { Icon(Icons.Default.Delete, "Supprimer") } } } } }
 

@@ -59,7 +59,7 @@ fun PhotoRaccordApp() {
 
     PhotoRaccordTheme(context = context, theme = currentTheme) {
         Surface(modifier = Modifier.fillMaxSize().safeDrawingPadding()) {
-            AppNavigation(currentTheme = currentTheme, onThemeChanged = { newTheme ->
+            AppNavigation(onThemeChanged = { newTheme ->
                 currentTheme = newTheme
                 prefs.edit { putString("app_theme", newTheme) }
             })
@@ -68,7 +68,7 @@ fun PhotoRaccordApp() {
 }
 
 @Composable
-fun AppNavigation(currentTheme: String, onThemeChanged: (String) -> Unit) {
+fun AppNavigation(onThemeChanged: (String) -> Unit) {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("photo_raccord_prefs", Context.MODE_PRIVATE) }
     var projet by remember { mutableStateOf(prefs.getString("last_projet", "") ?: "") }
@@ -117,7 +117,6 @@ fun AppNavigation(currentTheme: String, onThemeChanged: (String) -> Unit) {
             onClose = { currentScreen = Screen.SESSION }
         )
         Screen.SETTINGS -> SettingsScreen(
-            currentTheme = currentTheme,
             onThemeChanged = onThemeChanged,
             onProjetRenamed = { oldName, newName -> if (projet == oldName) projet = newName },
             onProjetDeleted = { deletedProjet ->
