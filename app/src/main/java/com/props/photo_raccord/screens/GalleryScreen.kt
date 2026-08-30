@@ -22,8 +22,23 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -42,8 +57,35 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuAnchorType
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
@@ -81,7 +123,6 @@ import com.props.photo_raccord.viewmodel.SortOption
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.io.File
-import androidx.compose.foundation.gestures.detectTransformGestures
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -90,173 +131,1183 @@ fun GalleryScreen(projet: String, onClose: () -> Unit) {
     val photoDao = remember { AppDatabase.getDatabase(context).photoDao() }
     val factory = remember { GalleryViewModelFactory(photoDao) }
     val viewModel: GalleryViewModel = viewModel(factory = factory)
-    LaunchedEffect(projet) { viewModel.initProjet(projet) }
+
+    LaunchedEffect(projet) {
+        viewModel.initProjet(projet)
+    }
+
     val groupedPhotos by viewModel.groupedPhotosWithIndex.collectAsState()
     val filteredSortedIndexedPhotos by viewModel.filteredSortedIndexedPhotos.collectAsState()
     val decorsExistants by viewModel.decorsExistants.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
     val sortOption by viewModel.sortOption.collectAsState()
-    val sortStates = remember { mutableStateOf(mapOf("date" to false, "sequence" to false, "decor" to false)) }
+
+    val sortStates = remember {
+        mutableStateOf(
+            mapOf(
+                "date" to false,
+                "sequence" to false,
+                "decor" to false
+            )
+        )
+    }
+
     fun handleSortClick(sortType: String) {
         val newState = !(sortStates.value[sortType] ?: false)
-        sortStates.value = sortStates.value.toMutableMap().apply { put(sortType, newState) }
+
+        sortStates.value = sortStates.value.toMutableMap().apply {
+            put(sortType, newState)
+        }
+
         viewModel.sortOption.value = when (sortType) {
-            "date" -> if (newState) SortOption.DATE_ASC else SortOption.DATE_DESC
-            "sequence" -> if (newState) SortOption.SEQUENCE_ASC else SortOption.SEQUENCE_DESC
-            "decor" -> if (newState) SortOption.DECOR_ASC else SortOption.DECOR_DESC
+            "date" -> if (newState) {
+                SortOption.DATE_ASC
+            } else {
+                SortOption.DATE_DESC
+            }
+
+            "sequence" -> if (newState) {
+                SortOption.SEQUENCE_ASC
+            } else {
+                SortOption.SEQUENCE_DESC
+            }
+
+            "decor" -> if (newState) {
+                SortOption.DECOR_ASC
+            } else {
+                SortOption.DECOR_DESC
+            }
+
             else -> SortOption.DATE_DESC
         }
     }
+
     var selectedPhotoId by remember { mutableStateOf<Long?>(null) }
     var importedSourceUri by remember { mutableStateOf<Uri?>(null) }
     var showImportDialog by remember { mutableStateOf(false) }
     var importError by remember { mutableStateOf<String?>(null) }
-    val snapshotPhotoList = remember(filteredSortedIndexedPhotos) { filteredSortedIndexedPhotos.map { it.second } }
-    val scope = rememberCoroutineScope()
 
-    val imagePickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) {
-            importedSourceUri = uri
-            showImportDialog = true
-        }
+    /*
+     * Cette liste correspond exactement à l'ordre actuellement sélectionné
+     * dans la galerie. Le HorizontalPager doit utiliser cette liste et non
+     * la liste brute des photos.
+     */
+    val snapshotPhotoList = remember(filteredSortedIndexedPhotos) {
+        filteredSortedIndexedPhotos.map { it.second }
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        Column(modifier = Modifier.fillMaxSize().safeDrawingPadding()) {
+    val scope = rememberCoroutineScope()
+
+    val imagePickerLauncher =
+        rememberLauncherForActivityResult(
+            ActivityResultContracts.OpenDocument()
+        ) { uri ->
+            if (uri != null) {
+                importedSourceUri = uri
+                showImportDialog = true
+            }
+        }
+
+    Box(
+        modifier = Modifier.fillMaxSize()
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .safeDrawingPadding()
+        ) {
             CenterAlignedTopAppBar(
-                navigationIcon = { IconButton(onClick = onClose) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Retour") } },
-                title = { Text(projet.uppercase(), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleLarge) },
-                actions = { IconButton(onClick = { imagePickerLauncher.launch(arrayOf("image/*")) }) { Icon(Icons.Default.Add, "Importer une photo") } },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface, titleContentColor = MaterialTheme.colorScheme.onSurface),
+                navigationIcon = {
+                    IconButton(
+                        onClick = onClose
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            "Retour"
+                        )
+                    }
+                },
+                title = {
+                    Text(
+                        projet.uppercase(),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.titleLarge
+                    )
+                },
+                actions = {
+                    IconButton(
+                        onClick = {
+                            imagePickerLauncher.launch(arrayOf("image/*"))
+                        }
+                    ) {
+                        Icon(
+                            Icons.Default.Add,
+                            "Importer une photo"
+                        )
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    titleContentColor = MaterialTheme.colorScheme.onSurface
+                ),
                 modifier = Modifier.fillMaxWidth()
             )
-            Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
-                OutlinedTextField(value = searchQuery, onValueChange = { viewModel.searchQuery.value = it }, modifier = Modifier.fillMaxWidth(), placeholder = { Text("Rechercher...", fontFamily = DM_Mono) }, leadingIcon = { Icon(Icons.Default.Search, "Rechercher") }, trailingIcon = { if (searchQuery.isNotEmpty()) IconButton(onClick = { viewModel.searchQuery.value = "" }) { Icon(Icons.Default.Close, "Effacer la recherche") } }, singleLine = true, shape = MaterialTheme.shapes.medium)
-                Spacer(modifier = Modifier.height(8.dp))
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    SortButton("Date", sortOption == SortOption.DATE_ASC || sortOption == SortOption.DATE_DESC, sortStates.value["date"] ?: false, { handleSortClick("date") }, Modifier.weight(1f))
-                    SortButton("Séquence", sortOption == SortOption.SEQUENCE_ASC || sortOption == SortOption.SEQUENCE_DESC, sortStates.value["sequence"] ?: false, { handleSortClick("sequence") }, Modifier.weight(1f))
-                    SortButton("Décors", sortOption == SortOption.DECOR_ASC || sortOption == SortOption.DECOR_DESC, sortStates.value["decor"] ?: false, { handleSortClick("decor") }, Modifier.weight(1f))
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(
+                        horizontal = 16.dp,
+                        vertical = 8.dp
+                    )
+            ) {
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = {
+                        viewModel.searchQuery.value = it
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = {
+                        Text(
+                            "Rechercher...",
+                            fontFamily = DM_Mono
+                        )
+                    },
+                    leadingIcon = {
+                        Icon(
+                            Icons.Default.Search,
+                            "Rechercher"
+                        )
+                    },
+                    trailingIcon = {
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(
+                                onClick = {
+                                    viewModel.searchQuery.value = ""
+                                }
+                            ) {
+                                Icon(
+                                    Icons.Default.Close,
+                                    "Effacer la recherche"
+                                )
+                            }
+                        }
+                    },
+                    singleLine = true,
+                    shape = MaterialTheme.shapes.medium
+                )
+
+                Spacer(
+                    modifier = Modifier.height(8.dp)
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    SortButton(
+                        "Date",
+                        sortOption == SortOption.DATE_ASC ||
+                                sortOption == SortOption.DATE_DESC,
+                        sortStates.value["date"] ?: false,
+                        { handleSortClick("date") },
+                        Modifier.weight(1f)
+                    )
+
+                    SortButton(
+                        "Séquence",
+                        sortOption == SortOption.SEQUENCE_ASC ||
+                                sortOption == SortOption.SEQUENCE_DESC,
+                        sortStates.value["sequence"] ?: false,
+                        { handleSortClick("sequence") },
+                        Modifier.weight(1f)
+                    )
+
+                    SortButton(
+                        "Décors",
+                        sortOption == SortOption.DECOR_ASC ||
+                                sortOption == SortOption.DECOR_DESC,
+                        sortStates.value["decor"] ?: false,
+                        { handleSortClick("decor") },
+                        Modifier.weight(1f)
+                    )
                 }
             }
-            Spacer(modifier = Modifier.height(4.dp))
+
+            Spacer(
+                modifier = Modifier.height(4.dp)
+            )
+
             val gridState = rememberLazyGridState()
-            if (filteredSortedIndexedPhotos.isEmpty()) Box(modifier = Modifier.fillMaxSize().weight(1f).padding(16.dp), contentAlignment = Alignment.Center) { Text(if (snapshotPhotoList.isEmpty()) "Aucune photo enregistrée pour ce projet." else "Aucune photo ne correspond à votre recherche.", fontFamily = DM_Mono) }
-            else LazyVerticalGrid(columns = GridCells.Fixed(2), state = gridState, modifier = Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(8.dp)) {
-                groupedPhotos.forEach { (header, indexedPhotosInGroup) ->
-                    item(span = { GridItemSpan(maxLineSpan) }) { Row(modifier = Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) { Text(header, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary, fontFamily = DM_Mono, fontWeight = FontWeight.Bold); Spacer(modifier = Modifier.width(8.dp)); HorizontalDivider(modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.outlineVariant); Spacer(modifier = Modifier.width(8.dp)); Text(if (indexedPhotosInGroup.size > 1) "${indexedPhotosInGroup.size} photos" else "1 photo", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, fontFamily = DM_Mono) } }
-                    items(indexedPhotosInGroup, key = { it.second.id }) { pair -> PhotoCard(pair.second, sortOption) { selectedPhotoId = pair.second.id } }
+
+            if (filteredSortedIndexedPhotos.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .weight(1f)
+                        .padding(16.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        if (snapshotPhotoList.isEmpty()) {
+                            "Aucune photo enregistrée pour ce projet."
+                        } else {
+                            "Aucune photo ne correspond à votre recherche."
+                        },
+                        fontFamily = DM_Mono
+                    )
+                }
+            } else {
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(2),
+                    state = gridState,
+                    modifier = Modifier.weight(1f),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    contentPadding = PaddingValues(8.dp)
+                ) {
+                    groupedPhotos.forEach { (header, indexedPhotosInGroup) ->
+                        item(
+                            span = {
+                                GridItemSpan(maxLineSpan)
+                            }
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(
+                                        top = 12.dp,
+                                        bottom = 4.dp
+                                    ),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    header,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontFamily = DM_Mono,
+                                    fontWeight = FontWeight.Bold
+                                )
+
+                                Spacer(
+                                    modifier = Modifier.width(8.dp)
+                                )
+
+                                HorizontalDivider(
+                                    modifier = Modifier.weight(1f),
+                                    color = MaterialTheme.colorScheme.outlineVariant
+                                )
+
+                                Spacer(
+                                    modifier = Modifier.width(8.dp)
+                                )
+
+                                Text(
+                                    if (indexedPhotosInGroup.size > 1) {
+                                        "${indexedPhotosInGroup.size} photos"
+                                    } else {
+                                        "1 photo"
+                                    },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontFamily = DM_Mono
+                                )
+                            }
+                        }
+
+                        items(
+                            indexedPhotosInGroup,
+                            key = { it.second.id }
+                        ) { pair ->
+                            PhotoCard(
+                                pair.second,
+                                sortOption
+                            ) {
+                                selectedPhotoId = pair.second.id
+                            }
+                        }
+                    }
                 }
             }
         }
+
         selectedPhotoId?.let { id ->
-            val startIndex = snapshotPhotoList.indexOfFirst { it.id == id }.let { if (it >= 0) it else 0 }
-            if (snapshotPhotoList.isNotEmpty()) FullScreenImageDialog(photos = snapshotPhotoList, initialIndex = startIndex, existingDecors = decorsExistants,
-                onUpdatePhoto = { updatedPhoto -> scope.launch(Dispatchers.IO) { updatePhotoBanner(context, updatedPhoto.uri, updatedPhoto.projet, updatedPhoto.sequence, updatedPhoto.decor, updatedPhoto.date); photoDao.update(updatedPhoto) } },
-                onDeletePhoto = { photoToDelete -> scope.launch(Dispatchers.IO) { deletePhotoFile(context, photoToDelete); photoDao.deletePhotos(listOf(photoToDelete)) } },
-                onDismiss = { selectedPhotoId = null })
-            else selectedPhotoId = null
+            val startIndex =
+                snapshotPhotoList
+                    .indexOfFirst { it.id == id }
+                    .let {
+                        if (it >= 0) it else 0
+                    }
+
+            if (snapshotPhotoList.isNotEmpty()) {
+                FullScreenImageDialog(
+                    photos = snapshotPhotoList,
+                    initialIndex = startIndex,
+                    existingDecors = decorsExistants,
+
+                    onUpdatePhoto = { updatedPhoto ->
+                        scope.launch(Dispatchers.IO) {
+                            updatePhotoBanner(
+                                context,
+                                updatedPhoto.uri,
+                                updatedPhoto.projet,
+                                updatedPhoto.sequence,
+                                updatedPhoto.decor,
+                                updatedPhoto.date
+                            )
+
+                            photoDao.update(updatedPhoto)
+                        }
+                    },
+
+                    onDeletePhoto = { photoToDelete ->
+                        scope.launch(Dispatchers.IO) {
+                            deletePhotoFile(
+                                context,
+                                photoToDelete
+                            )
+
+                            photoDao.deletePhotos(
+                                listOf(photoToDelete)
+                            )
+                        }
+                    },
+
+                    onDismiss = {
+                        selectedPhotoId = null
+                    }
+                )
+            } else {
+                selectedPhotoId = null
+            }
         }
     }
 
     if (showImportDialog && importedSourceUri != null) {
         EditPhotoDialog(
-            photo = PhotoEntity(uri = importedSourceUri.toString(), projet = projet, sequence = "", decor = "", date = ""),
+            photo = PhotoEntity(
+                uri = importedSourceUri.toString(),
+                projet = projet,
+                sequence = "",
+                decor = "",
+                date = ""
+            ),
             existingDecors = decorsExistants,
             title = "Importer la photo",
+
             onConfirm = { sequence, decor ->
                 showImportDialog = false
+
                 val source = importedSourceUri
                 importedSourceUri = null
+
                 if (source != null) {
                     scope.launch(Dispatchers.IO) {
                         try {
-                            val (uriString, date) = importAndProcessPhoto(context, source, projet, sequence, decor)
-                            photoDao.insert(PhotoEntity(uri = uriString, projet = projet, sequence = sequence, decor = decor, date = date))
+                            val (uriString, date) =
+                                importAndProcessPhoto(
+                                    context,
+                                    source,
+                                    projet,
+                                    sequence,
+                                    decor
+                                )
+
+                            photoDao.insert(
+                                PhotoEntity(
+                                    uri = uriString,
+                                    projet = projet,
+                                    sequence = sequence,
+                                    decor = decor,
+                                    date = date
+                                )
+                            )
                         } catch (e: Exception) {
-                            importError = e.message ?: "Impossible d'importer la photo"
+                            importError =
+                                e.message
+                                    ?: "Impossible d'importer la photo"
                         }
                     }
                 }
             },
-            onDismiss = { showImportDialog = false; importedSourceUri = null }
+
+            onDismiss = {
+                showImportDialog = false
+                importedSourceUri = null
+            }
         )
     }
 
     importError?.let { message ->
-        AlertDialog(onDismissRequest = { importError = null }, title = { Text("Import impossible") }, text = { Text(message) }, confirmButton = { TextButton(onClick = { importError = null }) { Text("OK") } })
+        AlertDialog(
+            onDismissRequest = {
+                importError = null
+            },
+            title = {
+                Text("Import impossible")
+            },
+            text = {
+                Text(message)
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        importError = null
+                    }
+                ) {
+                    Text("OK")
+                }
+            }
+        )
     }
 }
 
-@Composable private fun SortButton(label: String, isActive: Boolean, isAscending: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) { val containerColor = if (isActive) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant; val contentColor = if (isActive) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant; Surface(onClick = onClick, modifier = modifier, shape = MaterialTheme.shapes.small, color = containerColor, contentColor = contentColor) { Row(modifier = Modifier.padding(vertical = 6.dp, horizontal = 4.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) { Text(label.uppercase(), style = MaterialTheme.typography.labelMedium, fontFamily = DM_Mono, color = contentColor, maxLines = 1); Icon(if (isAscending) Icons.Default.ArrowDropUp else Icons.Default.ArrowDropDown, if (isAscending) "Croissant" else "Décroissant", tint = contentColor) } } }
+@Composable
+private fun SortButton(
+    label: String,
+    isActive: Boolean,
+    isAscending: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val containerColor =
+        if (isActive) {
+            MaterialTheme.colorScheme.primaryContainer
+        } else {
+            MaterialTheme.colorScheme.surfaceVariant
+        }
 
-@Composable private fun PhotoCard(photo: PhotoEntity, sortOption: SortOption, onClick: () -> Unit) { val cardHeight = 190.dp; val bannerHeight = 28.dp; Card(modifier = Modifier.fillMaxWidth().height(cardHeight).clickable(onClick = onClick).semantics { contentDescription = "Photo ${photo.sequence} ${photo.decor}" }, elevation = CardDefaults.cardElevation(defaultElevation = 4.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant), shape = MaterialTheme.shapes.medium) { Box(modifier = Modifier.fillMaxSize()) { AsyncImage(model = ImageRequest.Builder(LocalContext.current).data(photo.uri).size(300).crossfade(true).build(), contentDescription = "Raccord ${photo.sequence}", modifier = Modifier.fillMaxWidth().height(cardHeight - bannerHeight).clipToBounds(), contentScale = ContentScale.Crop); Box(modifier = Modifier.align(Alignment.BottomStart).fillMaxWidth().height(bannerHeight).background(MaterialTheme.colorScheme.secondaryContainer).padding(horizontal = 8.dp), contentAlignment = Alignment.Center) { when (sortOption) { SortOption.DATE_DESC, SortOption.DATE_ASC -> Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) { Text("Seq : ${photo.sequence}", style = MaterialTheme.typography.bodySmall, fontFamily = BarlowCondensed, color = MaterialTheme.colorScheme.onSecondaryContainer, maxLines = 1, overflow = TextOverflow.Ellipsis); Text(photo.decor, style = MaterialTheme.typography.bodySmall, fontFamily = BarlowCondensed, color = MaterialTheme.colorScheme.onSecondaryContainer, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.End, modifier = Modifier.padding(start = 4.dp)) }; SortOption.SEQUENCE_ASC, SortOption.SEQUENCE_DESC -> Text("Décor : ${photo.decor}", style = MaterialTheme.typography.bodySmall, fontFamily = BarlowCondensed, color = MaterialTheme.colorScheme.onSecondaryContainer, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center); SortOption.DECOR_ASC, SortOption.DECOR_DESC -> Text("Seq : ${photo.sequence}", style = MaterialTheme.typography.bodySmall, fontFamily = BarlowCondensed, color = MaterialTheme.colorScheme.onSecondaryContainer, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center) } } } } }
+    val contentColor =
+        if (isActive) {
+            MaterialTheme.colorScheme.onPrimaryContainer
+        } else {
+            MaterialTheme.colorScheme.onSurfaceVariant
+        }
 
-@Composable private fun FullScreenImageDialog(photos: List<PhotoEntity>, initialIndex: Int, existingDecors: List<String>, onUpdatePhoto: (PhotoEntity) -> Unit, onDeletePhoto: (PhotoEntity) -> Unit, onDismiss: () -> Unit) {
-    val context = LocalContext.current
-    val pagerState = rememberPagerState(initialPage = initialIndex, pageCount = { photos.size })
-    var isZoomedIn by remember { mutableStateOf(false) }; var showEditDialog by remember { mutableStateOf(false) }
-    LaunchedEffect(photos.size) { if (photos.isEmpty()) onDismiss() }
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
-            HorizontalPager(state = pagerState, userScrollEnabled = !isZoomedIn, modifier = Modifier.fillMaxSize()) { page -> if (page < photos.size) ZoomableImage(photo = photos[page], isCurrentPage = page == pagerState.currentPage, onZoomChanged = { zoomed -> if (page == pagerState.currentPage) isZoomedIn = zoomed }) }
-            Box(modifier = Modifier.fillMaxSize().padding(16.dp).safeDrawingPadding()) {
-                var fabExpanded by remember { mutableStateOf(false) }
-                if (fabExpanded) Box(modifier = Modifier.fillMaxSize().clickable { fabExpanded = false }) {}
-                FloatingActionButton(onClick = onDismiss, containerColor = MaterialTheme.colorScheme.surfaceVariant, contentColor = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.align(Alignment.TopStart)) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Fermer") }
-                Box(modifier = Modifier.align(Alignment.TopEnd), contentAlignment = Alignment.TopEnd) { Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    FloatingActionButton(onClick = { fabExpanded = !fabExpanded }, containerColor = MaterialTheme.colorScheme.primaryContainer, contentColor = MaterialTheme.colorScheme.onPrimaryContainer) { Icon(if (fabExpanded) Icons.Default.Close else Icons.Default.MoreVert, "Menu") }
-                    AnimatedVisibility(visible = fabExpanded, enter = fadeIn() + expandVertically(expandFrom = Alignment.Top), exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top)) { Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FabMenuItem("Éditer", Icons.Default.Edit, false) { fabExpanded = false; showEditDialog = true }
-                        FabMenuItem("Partager", Icons.Default.Share, false) { fabExpanded = false; if (pagerState.currentPage < photos.size) sharePhoto(context, photos[pagerState.currentPage]) }
-                        FabMenuItem("Supprimer", Icons.Default.Delete, true) { fabExpanded = false; if (pagerState.currentPage < photos.size) onDeletePhoto(photos[pagerState.currentPage]) }
-                    } }
-                } }
+    Surface(
+        onClick = onClick,
+        modifier = modifier,
+        shape = MaterialTheme.shapes.small,
+        color = containerColor,
+        contentColor = contentColor
+    ) {
+        Row(
+            modifier = Modifier.padding(
+                vertical = 6.dp,
+                horizontal = 4.dp
+            ),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                label.uppercase(),
+                style = MaterialTheme.typography.labelMedium,
+                fontFamily = DM_Mono,
+                color = contentColor,
+                maxLines = 1
+            )
+
+            Icon(
+                if (isAscending) {
+                    Icons.Default.ArrowDropUp
+                } else {
+                    Icons.Default.ArrowDropDown
+                },
+                if (isAscending) {
+                    "Croissant"
+                } else {
+                    "Décroissant"
+                },
+                tint = contentColor
+            )
+        }
+    }
+}
+
+@Composable
+private fun PhotoCard(
+    photo: PhotoEntity,
+    sortOption: SortOption,
+    onClick: () -> Unit
+) {
+    val cardHeight = 190.dp
+    val bannerHeight = 28.dp
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(cardHeight)
+            .clickable(onClick = onClick)
+            .semantics {
+                contentDescription =
+                    "Photo ${photo.sequence} ${photo.decor}"
+            },
+        elevation = CardDefaults.cardElevation(
+            defaultElevation = 4.dp
+        ),
+        colors = CardDefaults.cardColors(
+            containerColor =
+                MaterialTheme.colorScheme.surfaceVariant
+        ),
+        shape = MaterialTheme.shapes.medium
+    ) {
+        Box(
+            modifier = Modifier.fillMaxSize()
+        ) {
+            AsyncImage(
+                model = ImageRequest.Builder(
+                    LocalContext.current
+                )
+                    .data(photo.uri)
+                    .size(300)
+                    .crossfade(true)
+                    .build(),
+                contentDescription = "Raccord ${photo.sequence}",
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(cardHeight - bannerHeight)
+                    .clipToBounds(),
+                contentScale = ContentScale.Crop
+            )
+
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .fillMaxWidth()
+                    .height(bannerHeight)
+                    .background(
+                        MaterialTheme.colorScheme.secondaryContainer
+                    )
+                    .padding(horizontal = 8.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                when (sortOption) {
+                    SortOption.DATE_DESC,
+                    SortOption.DATE_ASC -> {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement =
+                                Arrangement.SpaceBetween,
+                            verticalAlignment =
+                                Alignment.CenterVertically
+                        ) {
+                            Text(
+                                "Seq : ${photo.sequence}",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontFamily = BarlowCondensed,
+                                color =
+                                    MaterialTheme.colorScheme
+                                        .onSecondaryContainer,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+
+                            Text(
+                                photo.decor,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontFamily = BarlowCondensed,
+                                color =
+                                    MaterialTheme.colorScheme
+                                        .onSecondaryContainer,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                textAlign = TextAlign.End,
+                                modifier = Modifier.padding(
+                                    start = 4.dp
+                                )
+                            )
+                        }
+                    }
+
+                    SortOption.SEQUENCE_ASC,
+                    SortOption.SEQUENCE_DESC -> {
+                        Text(
+                            "Décor : ${photo.decor}",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = BarlowCondensed,
+                            color =
+                                MaterialTheme.colorScheme
+                                    .onSecondaryContainer,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+
+                    SortOption.DECOR_ASC,
+                    SortOption.DECOR_DESC -> {
+                        Text(
+                            "Seq : ${photo.sequence}",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = BarlowCondensed,
+                            color =
+                                MaterialTheme.colorScheme
+                                    .onSecondaryContainer,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
             }
         }
     }
-    if (showEditDialog && pagerState.currentPage < photos.size) { val currentPhoto = photos[pagerState.currentPage]; EditPhotoDialog(photo = currentPhoto, existingDecors = existingDecors, onConfirm = { newSeq, newDecor -> showEditDialog = false; onUpdatePhoto(currentPhoto.copy(sequence = newSeq, decor = newDecor)) }, onDismiss = { showEditDialog = false }) }
 }
 
-private fun sharePhoto(context: android.content.Context, photo: PhotoEntity) {
+@Composable
+private fun FullScreenImageDialog(
+    photos: List<PhotoEntity>,
+    initialIndex: Int,
+    existingDecors: List<String>,
+    onUpdatePhoto: (PhotoEntity) -> Unit,
+    onDeletePhoto: (PhotoEntity) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+
+    val pagerState = rememberPagerState(
+        initialPage = initialIndex,
+        pageCount = { photos.size }
+    )
+
+    var isZoomedIn by remember {
+        mutableStateOf(false)
+    }
+
+    var showEditDialog by remember {
+        mutableStateOf(false)
+    }
+
+    LaunchedEffect(photos.size) {
+        if (photos.isEmpty()) {
+            onDismiss()
+        }
+    }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false
+        )
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black)
+        ) {
+            /*
+             * Le pager utilise snapshotPhotoList, qui est construit à partir
+             * de filteredSortedIndexedPhotos. Il respecte donc toujours
+             * l'ordre de tri choisi dans la galerie.
+             */
+            HorizontalPager(
+                state = pagerState,
+                userScrollEnabled = !isZoomedIn,
+                modifier = Modifier.fillMaxSize()
+            ) { page ->
+                if (page < photos.size) {
+                    ZoomableImage(
+                        photo = photos[page],
+                        isCurrentPage =
+                            page == pagerState.currentPage,
+                        onZoomChanged = { zoomed ->
+                            if (page == pagerState.currentPage) {
+                                isZoomedIn = zoomed
+                            }
+                        }
+                    )
+                }
+            }
+
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp)
+                    .safeDrawingPadding()
+            ) {
+                var fabExpanded by remember {
+                    mutableStateOf(false)
+                }
+
+                if (fabExpanded) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clickable {
+                                fabExpanded = false
+                            }
+                    )
+                }
+
+                FloatingActionButton(
+                    onClick = onDismiss,
+                    containerColor =
+                        MaterialTheme.colorScheme.surfaceVariant,
+                    contentColor =
+                        MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.align(
+                        Alignment.TopStart
+                    )
+                ) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.ArrowBack,
+                        "Fermer"
+                    )
+                }
+
+                Box(
+                    modifier = Modifier.align(
+                        Alignment.TopEnd
+                    ),
+                    contentAlignment = Alignment.TopEnd
+                ) {
+                    Column(
+                        horizontalAlignment =
+                            Alignment.End,
+                        verticalArrangement =
+                            Arrangement.spacedBy(12.dp)
+                    ) {
+                        FloatingActionButton(
+                            onClick = {
+                                fabExpanded = !fabExpanded
+                            },
+                            containerColor =
+                                MaterialTheme.colorScheme
+                                    .primaryContainer,
+                            contentColor =
+                                MaterialTheme.colorScheme
+                                    .onPrimaryContainer
+                        ) {
+                            Icon(
+                                if (fabExpanded) {
+                                    Icons.Default.Close
+                                } else {
+                                    Icons.Default.MoreVert
+                                },
+                                "Menu"
+                            )
+                        }
+
+                        AnimatedVisibility(
+                            visible = fabExpanded,
+                            enter = fadeIn() +
+                                    expandVertically(
+                                        expandFrom =
+                                            Alignment.Top
+                                    ),
+                            exit = fadeOut() +
+                                    shrinkVertically(
+                                        shrinkTowards =
+                                            Alignment.Top
+                                    )
+                        ) {
+                            Column(
+                                horizontalAlignment =
+                                    Alignment.End,
+                                verticalArrangement =
+                                    Arrangement.spacedBy(8.dp)
+                            ) {
+                                FabMenuItem(
+                                    "Éditer",
+                                    Icons.Default.Edit,
+                                    false
+                                ) {
+                                    fabExpanded = false
+                                    showEditDialog = true
+                                }
+
+                                FabMenuItem(
+                                    "Partager",
+                                    Icons.Default.Share,
+                                    false
+                                ) {
+                                    fabExpanded = false
+
+                                    if (pagerState.currentPage <
+                                        photos.size
+                                    ) {
+                                        sharePhoto(
+                                            context,
+                                            photos[
+                                                pagerState.currentPage
+                                            ]
+                                        )
+                                    }
+                                }
+
+                                FabMenuItem(
+                                    "Supprimer",
+                                    Icons.Default.Delete,
+                                    true
+                                ) {
+                                    fabExpanded = false
+
+                                    if (pagerState.currentPage <
+                                        photos.size
+                                    ) {
+                                        onDeletePhoto(
+                                            photos[
+                                                pagerState.currentPage
+                                            ]
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (
+        showEditDialog &&
+        pagerState.currentPage < photos.size
+    ) {
+        val currentPhoto =
+            photos[pagerState.currentPage]
+
+        EditPhotoDialog(
+            photo = currentPhoto,
+            existingDecors = existingDecors,
+
+            onConfirm = { newSeq, newDecor ->
+                showEditDialog = false
+
+                onUpdatePhoto(
+                    currentPhoto.copy(
+                        sequence = newSeq,
+                        decor = newDecor
+                    )
+                )
+            },
+
+            onDismiss = {
+                showEditDialog = false
+            }
+        )
+    }
+}
+
+private fun sharePhoto(
+    context: android.content.Context,
+    photo: PhotoEntity
+) {
     try {
         val sourceUri = photo.uri.toUri()
-        val shareUri = if (sourceUri.scheme == "file") FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", File(sourceUri.path!!)) else sourceUri
-        context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply { type = "image/jpeg"; putExtra(Intent.EXTRA_STREAM, shareUri); clipData = android.content.ClipData.newRawUri("PhotoRaccord", shareUri); addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION) }, "Partager"))
-    } catch (e: Exception) { android.widget.Toast.makeText(context, "Impossible de partager cette photo : ${e.message}", android.widget.Toast.LENGTH_LONG).show() }
+
+        val shareUri =
+            if (sourceUri.scheme == "file") {
+                FileProvider.getUriForFile(
+                    context,
+                    "${context.packageName}.fileprovider",
+                    File(sourceUri.path!!)
+                )
+            } else {
+                sourceUri
+            }
+
+        context.startActivity(
+            Intent.createChooser(
+                Intent(Intent.ACTION_SEND).apply {
+                    type = "image/jpeg"
+
+                    putExtra(
+                        Intent.EXTRA_STREAM,
+                        shareUri
+                    )
+
+                    clipData =
+                        android.content.ClipData.newRawUri(
+                            "PhotoRaccord",
+                            shareUri
+                        )
+
+                    addFlags(
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    )
+                },
+                "Partager"
+            )
+        )
+    } catch (e: Exception) {
+        android.widget.Toast.makeText(
+            context,
+            "Impossible de partager cette photo : ${e.message}",
+            android.widget.Toast.LENGTH_LONG
+        ).show()
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
-@Composable private fun EditPhotoDialog(photo: PhotoEntity, existingDecors: List<String>, title: String = "Éditer les informations", onConfirm: (String, String) -> Unit, onDismiss: () -> Unit) { var sequence by remember { mutableStateOf(photo.sequence) }; var decor by remember { mutableStateOf(photo.decor) }; var expandedDecor by remember { mutableStateOf(false) }; val filteredDecors = remember(decor, existingDecors) { existingDecors.filter { it.contains(decor, ignoreCase = true) } }; AlertDialog(onDismissRequest = onDismiss, title = { Text(title, fontFamily = BarlowCondensed, fontWeight = FontWeight.SemiBold) }, text = { Column(verticalArrangement = Arrangement.spacedBy(12.dp)) { OutlinedTextField(value = sequence, onValueChange = { sequence = it }, label = { Text("Séquence", fontFamily = DM_Mono) }, singleLine = true, modifier = Modifier.fillMaxWidth()); ExposedDropdownMenuBox(expanded = expandedDecor && filteredDecors.isNotEmpty(), onExpandedChange = { expandedDecor = it }) { OutlinedTextField(value = decor, onValueChange = { decor = it; expandedDecor = true }, label = { Text("Décor", fontFamily = DM_Mono) }, modifier = Modifier.fillMaxWidth().menuAnchor(ExposedDropdownMenuAnchorType.PrimaryEditable), singleLine = true, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedDecor) }); DropdownMenu(expanded = expandedDecor && filteredDecors.isNotEmpty(), onDismissRequest = { expandedDecor = false }) { filteredDecors.forEach { item -> DropdownMenuItem(text = { Text(item, fontFamily = DM_Mono) }, onClick = { decor = item; expandedDecor = false }) } } } } }, confirmButton = { TextButton(onClick = { onConfirm(sequence, decor) }, enabled = sequence.isNotBlank() && decor.isNotBlank()) { Text("Enregistrer", fontFamily = DM_Mono) } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Annuler", fontFamily = DM_Mono) } }) }
+@Composable
+private fun EditPhotoDialog(
+    photo: PhotoEntity,
+    existingDecors: List<String>,
+    title: String = "Éditer les informations",
+    onConfirm: (String, String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var sequence by remember {
+        mutableStateOf(photo.sequence)
+    }
 
-@Composable private fun FabMenuItem(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, destructive: Boolean, onClick: () -> Unit) { Surface(onClick = onClick, shape = MaterialTheme.shapes.medium, color = if (destructive) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.surfaceVariant, contentColor = if (destructive) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSurfaceVariant, shadowElevation = 4.dp) { Row(Modifier.padding(horizontal = 16.dp, vertical = 10.dp), Arrangement.spacedBy(8.dp), Alignment.CenterVertically) { Text(label, fontFamily = DM_Mono); Icon(icon, contentDescription = label) } } }
+    var decor by remember {
+        mutableStateOf(photo.decor)
+    }
 
+    var expandedDecor by remember {
+        mutableStateOf(false)
+    }
+
+    val filteredDecors =
+        remember(
+            decor,
+            existingDecors
+        ) {
+            existingDecors.filter {
+                it.contains(
+                    decor,
+                    ignoreCase = true
+                )
+            }
+        }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+
+        title = {
+            Text(
+                title,
+                fontFamily = BarlowCondensed,
+                fontWeight = FontWeight.SemiBold
+            )
+        },
+
+        text = {
+            Column(
+                verticalArrangement =
+                    Arrangement.spacedBy(12.dp)
+            ) {
+                OutlinedTextField(
+                    value = sequence,
+                    onValueChange = {
+                        sequence = it
+                    },
+                    label = {
+                        Text(
+                            "Séquence",
+                            fontFamily = DM_Mono
+                        )
+                    },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                ExposedDropdownMenuBox(
+                    expanded =
+                        expandedDecor &&
+                                filteredDecors.isNotEmpty(),
+
+                    onExpandedChange = {
+                        expandedDecor = it
+                    }
+                ) {
+                    OutlinedTextField(
+                        value = decor,
+                        onValueChange = {
+                            decor = it
+                            expandedDecor = true
+                        },
+                        label = {
+                            Text(
+                                "Décor",
+                                fontFamily = DM_Mono
+                            )
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .menuAnchor(
+                                ExposedDropdownMenuAnchorType
+                                    .PrimaryEditable
+                            ),
+                        singleLine = true,
+
+                        trailingIcon = {
+                            ExposedDropdownMenuDefaults
+                                .TrailingIcon(
+                                    expanded =
+                                        expandedDecor
+                                )
+                        }
+                    )
+
+                    DropdownMenu(
+                        expanded =
+                            expandedDecor &&
+                                    filteredDecors.isNotEmpty(),
+
+                        onDismissRequest = {
+                            expandedDecor = false
+                        }
+                    ) {
+                        filteredDecors.forEach { item ->
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        item,
+                                        fontFamily = DM_Mono
+                                    )
+                                },
+                                onClick = {
+                                    decor = item
+                                    expandedDecor = false
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+        },
+
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    onConfirm(
+                        sequence,
+                        decor
+                    )
+                },
+                enabled =
+                    sequence.isNotBlank() &&
+                            decor.isNotBlank()
+            ) {
+                Text(
+                    "Enregistrer",
+                    fontFamily = DM_Mono
+                )
+            }
+        },
+
+        dismissButton = {
+            TextButton(
+                onClick = onDismiss
+            ) {
+                Text("Annuler")
+            }
+        }
+    )
+}
+
+@Composable
+private fun FabMenuItem(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    destructive: Boolean,
+    onClick: () -> Unit
+) {
+    Surface(
+        onClick = onClick,
+        shape = MaterialTheme.shapes.medium,
+        color =
+            if (destructive) {
+                MaterialTheme.colorScheme.errorContainer
+            } else {
+                MaterialTheme.colorScheme.surfaceVariant
+            },
+        contentColor =
+            if (destructive) {
+                MaterialTheme.colorScheme.onErrorContainer
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
+        shadowElevation = 4.dp
+    ) {
+        Row(
+            Modifier.padding(
+                horizontal = 16.dp,
+                vertical = 10.dp
+            ),
+            Arrangement.spacedBy(8.dp),
+            Alignment.CenterVertically
+        ) {
+            Text(
+                label,
+                fontFamily = DM_Mono
+            )
+
+            Icon(
+                icon,
+                contentDescription = label
+            )
+        }
+    }
+}
+
+/**
+ * Affichage d'une photo avec zoom et déplacement.
+ *
+ * Important :
+ *
+ * - À 1x avec un seul doigt, nous ne consommons PAS le geste.
+ *   Le HorizontalPager peut donc gérer le swipe gauche/droite.
+ *
+ * - Avec deux doigts, nous consommons le geste afin de gérer le pinch zoom.
+ *
+ * - Lorsque l'image est déjà zoomée, un doigt peut déplacer l'image.
+ *
+ * Cette séparation est nécessaire car detectTransformGestures()
+ * consomme les événements tactiles même lorsqu'il n'y a pas réellement
+ * de zoom, ce qui empêchait le HorizontalPager de recevoir le swipe.
+ */
 @Composable
 private fun ZoomableImage(
     photo: PhotoEntity,
     isCurrentPage: Boolean,
     onZoomChanged: (Boolean) -> Unit
 ) {
-    var scale by remember(photo.uri) { mutableFloatStateOf(1f) }
-    var offset by remember(photo.uri) { mutableStateOf(Offset.Zero) }
-    var containerSize by remember(photo.uri) { mutableStateOf(IntSize.Zero) }
+    var scale by remember(photo.uri) {
+        mutableFloatStateOf(1f)
+    }
+
+    var offset by remember(photo.uri) {
+        mutableStateOf(Offset.Zero)
+    }
+
+    var containerSize by remember(photo.uri) {
+        mutableStateOf(IntSize.Zero)
+    }
 
     LaunchedEffect(scale) {
         onZoomChanged(scale > 1f)
     }
 
     AsyncImage(
-        model = ImageRequest.Builder(LocalContext.current)
+        model = ImageRequest.Builder(
+            LocalContext.current
+        )
             .data(photo.uri)
             .size(coil.size.Size.ORIGINAL)
             .build(),
+
         contentDescription = null,
+
         contentScale = ContentScale.Fit,
+
         modifier = Modifier
             .fillMaxSize()
+
             .onSizeChanged {
                 containerSize = it
             }
+
+            /*
+             * Double-tap :
+             *
+             * 1x -> 2.5x
+             * zoomé -> 1x
+             */
             .pointerInput(isCurrentPage) {
                 detectTapGestures(
                     onDoubleTap = {
@@ -269,36 +1320,111 @@ private fun ZoomableImage(
                     }
                 )
             }
+
+            /*
+             * Gestion personnalisée des gestes.
+             *
+             * Nous ne consommons PAS le premier doigt lorsqu'on est à 1x.
+             * Le HorizontalPager peut donc recevoir son mouvement horizontal.
+             *
+             * Dès qu'un deuxième doigt est présent, nous prenons le contrôle
+             * pour gérer le zoom.
+             *
+             * Lorsque scale > 1, nous prenons également le contrôle avec
+             * un doigt pour permettre le déplacement de l'image.
+             */
             .pointerInput(isCurrentPage) {
-                detectTransformGestures { _, pan, zoom, _ ->
+                awaitEachGesture {
+                    awaitFirstDown(
+                        requireUnconsumed = false
+                    )
 
-                    // Le zoom ne doit être pris en compte
-                    // que lorsque l'image est déjà zoomée.
-                    if (scale > 1f || zoom > 1f) {
+                    do {
+                        val event = awaitPointerEvent()
 
-                        scale = (scale * zoom).coerceIn(1f, 5f)
+                        val pressedPointers =
+                            event.changes.count {
+                                it.pressed
+                            }
+
+                        /*
+                         * À 1x avec un seul doigt :
+                         *
+                         * Ne rien consommer.
+                         *
+                         * Cela permet au HorizontalPager de traiter
+                         * le swipe horizontal.
+                         */
+                        if (
+                            scale <= 1f &&
+                            pressedPointers < 2
+                        ) {
+                            continue
+                        }
+
+                        /*
+                         * À partir de deux doigts ou lorsque l'image
+                         * est déjà zoomée, on prend le contrôle.
+                         */
+                        val zoom =
+                            event.calculateZoom()
+
+                        val pan =
+                            event.calculatePan()
+
+                        scale =
+                            (scale * zoom)
+                                .coerceIn(
+                                    1f,
+                                    5f
+                                )
 
                         if (scale <= 1f) {
                             scale = 1f
                             offset = Offset.Zero
-                            return@detectTransformGestures
+                        } else {
+                            val maxX =
+                                (
+                                        containerSize.width *
+                                                (scale - 1f)
+                                        ) / 2f
+
+                            val maxY =
+                                (
+                                        containerSize.height *
+                                                (scale - 1f)
+                                        ) / 2f
+
+                            offset += pan
+
+                            offset = Offset(
+                                offset.x.coerceIn(
+                                    -maxX,
+                                    maxX
+                                ),
+                                offset.y.coerceIn(
+                                    -maxY,
+                                    maxY
+                                )
+                            )
                         }
 
-                        val maxX =
-                            (containerSize.width * (scale - 1f)) / 2f
+                        /*
+                         * Une fois le geste pris en charge par
+                         * ZoomableImage, on consomme les changements.
+                         */
+                        event.changes.forEach {
+                            it.consume()
+                        }
 
-                        val maxY =
-                            (containerSize.height * (scale - 1f)) / 2f
-
-                        offset += pan
-
-                        offset = Offset(
-                            offset.x.coerceIn(-maxX, maxX),
-                            offset.y.coerceIn(-maxY, maxY)
-                        )
-                    }
+                    } while (
+                        event.changes.any {
+                            it.pressed
+                        }
+                    )
                 }
             }
+
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
