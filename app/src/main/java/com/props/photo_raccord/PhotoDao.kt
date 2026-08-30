@@ -41,7 +41,10 @@ interface PhotoDao {
     @Insert
     suspend fun insert(photo: PhotoEntity)
 
-    @Query("SELECT DISTINCT projet FROM photos WHERE projet != '' ORDER BY projet ASC")
+    // Les dates sont stockées au format dd/MM/yyyy HH:mm. On les convertit en
+    // yyyyMMddHHmm pour que SQLite puisse trier chronologiquement. Le MAX(date)
+    // de chaque projet correspond à sa photo la plus récente.
+    @Query("SELECT projet FROM photos WHERE projet != '' GROUP BY projet ORDER BY MAX(substr(date, 7, 4) || substr(date, 4, 2) || substr(date, 1, 2) || substr(date, 12, 5)) DESC, projet ASC")
     fun getDistinctProjets(): Flow<List<String>>
 
     @Query("SELECT DISTINCT decor FROM photos WHERE projet = :projet AND decor != '' ORDER BY decor ASC")
