@@ -23,7 +23,7 @@ android {
             commandLine("git", "rev-list", "--count", "HEAD")
         }.standardOutput.asText.map { it.trim().toIntOrNull() ?: 1 }.getOrElse(1)
         versionCode = gitCommitCount
-        versionName = "0.1.$gitCommitCount"
+        versionName = "0.2.$gitCommitCount"
     }
 
     buildTypes {
