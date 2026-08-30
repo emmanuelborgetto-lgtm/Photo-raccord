@@ -93,6 +93,56 @@ fun updatePhotoBanner(
     }
 }
 
+/**
+ * Decodes an image selected through Android's document picker.
+ *
+ * Some document providers return streams that cannot reliably be decoded twice
+ * with BitmapFactory (for example cloud/document-provider implementations).
+ * We therefore copy the selected document to a temporary local file first and
+ * perform both the bounds read and the actual decode from that same file.
+ */
+private fun decodeSelectedImage(
+    context: Context,
+    sourceUri: Uri,
+    maxDimension: Int
+): Bitmap {
+    val tempFile = File.createTempFile("photo_import_", ".img", context.cacheDir)
+
+    try {
+        context.contentResolver.openInputStream(sourceUri)?.use { input ->
+            tempFile.outputStream().use { output ->
+                input.copyTo(output)
+            }
+        } ?: throw IllegalArgumentException("Impossible d'ouvrir l'image sélectionnée")
+
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(tempFile.absolutePath, bounds)
+
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+            throw IllegalArgumentException("Image invalide ou format non pris en charge")
+        }
+
+        val maxSide = maxOf(bounds.outWidth, bounds.outHeight)
+        val sample = if (maxSide > maxDimension) {
+            var value = 1
+            while (maxSide / value > maxDimension * 2) value *= 2
+            value
+        } else {
+            1
+        }
+
+        val options = BitmapFactory.Options().apply {
+            inSampleSize = sample
+            inPreferredConfig = Bitmap.Config.ARGB_8888
+        }
+
+        return BitmapFactory.decodeFile(tempFile.absolutePath, options)
+            ?: throw IllegalArgumentException("Impossible de décoder l'image sélectionnée")
+    } finally {
+        tempFile.delete()
+    }
+}
+
 fun importAndProcessPhoto(
     context: Context,
     sourceUri: Uri,
@@ -105,28 +155,10 @@ fun importAndProcessPhoto(
     val date = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date())
     val safeProjet = if (projet.isBlank()) "Projet" else projet
 
-    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-    context.contentResolver.openInputStream(sourceUri)?.use {
-        BitmapFactory.decodeStream(it, null, bounds)
-    } ?: throw IllegalArgumentException("Impossible de lire l'image sélectionnée")
-
-    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
-        throw IllegalArgumentException("Image invalide")
-    }
-
-    val maxDimension = 1920
-    val maxSide = maxOf(bounds.outWidth, bounds.outHeight)
-    val sample = if (maxSide > maxDimension) {
-        (maxSide + maxDimension - 1) / maxDimension
-    } else 1
-
-    val bitmap = context.contentResolver.openInputStream(sourceUri)?.use {
-        BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply {
-            inSampleSize = sample
-            inPreferredConfig = Bitmap.Config.ARGB_8888
-        })
-    } ?: throw IllegalArgumentException("Échec du décodage de l'image")
-
+    // Decode from a local temporary copy rather than directly from the
+    // document-provider stream. This fixes imports from providers for which
+    // BitmapFactory cannot reliably decode the selected URI.
+    val bitmap = decodeSelectedImage(context, sourceUri, maxDimension = 1920)
     val finalBitmap = createBanneredBitmap(bitmap, safeProjet, date, decor, sequence)
     val fileName = "IMG_${System.currentTimeMillis()}.jpg"
     var finalUri: Uri? = null
