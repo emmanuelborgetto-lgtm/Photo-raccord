@@ -21,6 +21,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -28,6 +29,7 @@ import androidx.core.content.edit
 import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
 import com.props.photo_raccord.AppDatabase
+import com.props.photo_raccord.DM_Mono
 import com.props.photo_raccord.utils.ensureDefaultNomedia
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -89,12 +91,12 @@ fun SettingsScreen(onThemeChanged: (String) -> Unit, onProjetRenamed: (String, S
                 Text("Palette de couleurs", style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.height(8.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ThemeButton("AMBER", onThemeChanged, Modifier.weight(1f))
-                    ThemeButton("VIOLET", onThemeChanged, Modifier.weight(1f))
+                    ThemeButton("KAKI", onThemeChanged, Modifier.weight(1f))
+                    ThemeButton("FUJI", onThemeChanged, Modifier.weight(1f))
                 }
                 Spacer(Modifier.height(8.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ThemeButton("TURQUOISE", onThemeChanged, Modifier.weight(1f))
+                    ThemeButton("HANADA", onThemeChanged, Modifier.weight(1f))
                     ThemeButton("SYSTEM", onThemeChanged, Modifier.weight(1f))
                 }
             }
@@ -206,8 +208,41 @@ private fun applySelectedFolderAsync(context: Context, prefs: android.content.Sh
 
 private fun getDisplayFolderPath(uriString: String): String = uriString.toUri().path?.substringAfterLast(":") ?: "Dossier personnalisé"
 
-@Composable private fun ThemeButton(theme: String, onThemeChanged: (String) -> Unit, modifier: Modifier) { Button(onClick = { onThemeChanged(theme) }, modifier = modifier) { Text(when(theme) { "AMBER" -> "Ambre"; "VIOLET" -> "Violet"; "TURQUOISE" -> "Turquoise"; else -> "Système" }) } }
+@Composable
+private fun ThemeButton(theme: String, onThemeChanged: (String) -> Unit, modifier: Modifier) {
+    val containerColor = when (theme) {
+        "KAKI" -> Color(0xFFD66B37)
+        "FUJI" -> Color(0xFFB5A6C9) // Lavande clair pour le bouton de sélection
+        "HANADA" -> Color(0xFF3C6E8F)
+        else -> MaterialTheme.colorScheme.surfaceVariant
+    }
 
+    val contentColor = when (theme) {
+        "KAKI" -> Color(0xFFE8D8B7)
+        "FUJI" -> Color(0xFF2D2338) // Texte sombre contrasté sur le lavande
+        "HANADA" -> Color(0xFFF8F4E9)
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+
+    Button(
+        onClick = { onThemeChanged(theme) },
+        modifier = modifier,
+        colors = ButtonDefaults.buttonColors(
+            containerColor = containerColor,
+            contentColor = contentColor
+        )
+    ) {
+        Text(
+            text = when(theme) {
+                "KAKI" -> "Kaki"
+                "FUJI" -> "Fuji"
+                "HANADA" -> "Hanada"
+                else -> "Système"
+            },
+            fontFamily = DM_Mono
+        )
+    }
+}
 @Composable private fun ProjectCard(project: String, onRename: (String, String) -> Unit, onDelete: (String) -> Unit) { Card(Modifier.fillMaxWidth()) { Row(Modifier.fillMaxWidth().padding(12.dp), Arrangement.SpaceBetween, Alignment.CenterVertically) { Text(project); Row { IconButton(onClick = { onRename(project, project) }) { Icon(Icons.Default.Edit, "Renommer") }; IconButton(onClick = { onDelete(project) }) { Icon(Icons.Default.Delete, "Supprimer") } } } } }
 
 private fun toggleNomediaFile(context: Context, treeUriString: String?, showInGallery: Boolean) { if (treeUriString == null) { ensureDefaultNomedia(context, showInGallery); return }; try { val root = DocumentFile.fromTreeUri(context, treeUriString.toUri()) ?: return; val f = root.findFile(".nomedia"); if (showInGallery) f?.delete() else if (f == null) root.createFile("application/octet-stream", ".nomedia") } catch (e: Exception) { Log.e("Settings", "Erreur .nomedia SAF", e) } }

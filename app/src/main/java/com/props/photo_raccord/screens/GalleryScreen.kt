@@ -677,7 +677,7 @@ private fun PhotoCard(
                     .fillMaxWidth()
                     .height(bannerHeight)
                     .background(
-                        MaterialTheme.colorScheme.secondaryContainer
+                        MaterialTheme.colorScheme.primaryContainer // <-- Remplacé ici
                     )
                     .padding(horizontal = 8.dp),
                 contentAlignment = Alignment.Center
@@ -698,7 +698,7 @@ private fun PhotoCard(
                                 fontFamily = BarlowCondensed,
                                 color =
                                     MaterialTheme.colorScheme
-                                        .onSecondaryContainer,
+                                        .onPrimaryContainer, // <-- Remplacé ici
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
@@ -709,7 +709,7 @@ private fun PhotoCard(
                                 fontFamily = BarlowCondensed,
                                 color =
                                     MaterialTheme.colorScheme
-                                        .onSecondaryContainer,
+                                        .onPrimaryContainer, // <-- Remplacé ici
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                                 textAlign = TextAlign.End,
@@ -728,7 +728,7 @@ private fun PhotoCard(
                             fontFamily = BarlowCondensed,
                             color =
                                 MaterialTheme.colorScheme
-                                    .onSecondaryContainer,
+                                    .onPrimaryContainer, // <-- Remplacé ici
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                             textAlign = TextAlign.Center
@@ -743,7 +743,7 @@ private fun PhotoCard(
                             fontFamily = BarlowCondensed,
                             color =
                                 MaterialTheme.colorScheme
-                                    .onSecondaryContainer,
+                                    .onPrimaryContainer, // <-- Remplacé ici
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                             textAlign = TextAlign.Center
