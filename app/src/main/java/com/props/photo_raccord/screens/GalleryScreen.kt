@@ -1346,7 +1346,7 @@ private fun ZoomableImage(
                             (scale * zoom)
                                 .coerceIn(
                                     1f,
-                                    5f
+                                    15f
                                 )
 
                         if (scale <= 1f) {

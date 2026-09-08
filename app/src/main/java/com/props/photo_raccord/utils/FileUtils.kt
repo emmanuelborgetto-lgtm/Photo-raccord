@@ -9,12 +9,38 @@ import android.provider.DocumentsContract
 import android.util.Log
 import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
+import com.props.photo_raccord.PhotoEntity
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import androidx.core.graphics.createBitmap
-import com.props.photo_raccord.PhotoEntity
+
+/**
+ * Décode une image en tentant d'abord sa pleine résolution d'origine — que ce soit une
+ * photo prise par l'appareil (résolution max du capteur) ou un fichier importé (résolution
+ * d'origine du fichier). Aucune réduction n'est appliquée par défaut. Si la mémoire
+ * disponible ne suit pas sur cet appareil précis (OutOfMemoryError), réduit progressivement
+ * plutôt que de faire planter l'application.
+ */
+fun decodeFullResolutionSafely(path: String): Bitmap {
+    var sampleSize = 1
+    var lastError: OutOfMemoryError? = null
+    repeat(4) {
+        try {
+            val options = BitmapFactory.Options().apply {
+                inSampleSize = sampleSize
+                inPreferredConfig = Bitmap.Config.ARGB_8888
+            }
+            return BitmapFactory.decodeFile(path, options)
+                ?: throw IllegalArgumentException("Échec du décodage du bitmap")
+        } catch (e: OutOfMemoryError) {
+            lastError = e
+            System.gc()
+            sampleSize *= 2
+        }
+    }
+    throw lastError ?: IllegalArgumentException("Mémoire insuffisante pour traiter cette image")
+}
 
 /** Creates a new bitmap with the original photo untouched and the banner appended below it. */
 fun createBanneredBitmap(
@@ -25,7 +51,11 @@ fun createBanneredBitmap(
     sequence: String
 ): Bitmap {
     val bannerHeight = (source.height * 0.08f).toInt().coerceAtLeast(1)
-    val result = createBitmap(source.width, source.height + bannerHeight)
+    val result = Bitmap.createBitmap(
+        source.width,
+        source.height + bannerHeight,
+        Bitmap.Config.ARGB_8888
+    )
     val canvas = Canvas(result)
     canvas.drawBitmap(source, 0f, 0f, null)
     drawInfoBanner(
@@ -102,11 +132,14 @@ fun updatePhotoBanner(
  * with BitmapFactory (for example cloud/document-provider implementations).
  * We therefore copy the selected document to a temporary local file first and
  * perform both the bounds read and the actual decode from that same file.
+ *
+ * La résolution d'origine du fichier importé est conservée telle quelle (aucune
+ * réduction n'est appliquée) ; seul un manque de mémoire réel sur l'appareil
+ * déclenche un repli progressif via [decodeFullResolutionSafely].
  */
 private fun decodeSelectedImage(
     context: Context,
-    sourceUri: Uri,
-    maxDimension: Int
+    sourceUri: Uri
 ): Bitmap {
     val tempFile = File.createTempFile("photo_import_", ".img", context.cacheDir)
 
@@ -124,22 +157,7 @@ private fun decodeSelectedImage(
             throw IllegalArgumentException("Image invalide ou format non pris en charge")
         }
 
-        val maxSide = maxOf(bounds.outWidth, bounds.outHeight)
-        val sample = if (maxSide > maxDimension) {
-            var value = 1
-            while (maxSide / value > maxDimension * 2) value *= 2
-            value
-        } else {
-            1
-        }
-
-        val options = BitmapFactory.Options().apply {
-            inSampleSize = sample
-            inPreferredConfig = Bitmap.Config.ARGB_8888
-        }
-
-        return BitmapFactory.decodeFile(tempFile.absolutePath, options)
-            ?: throw IllegalArgumentException("Impossible de décoder l'image sélectionnée")
+        return decodeFullResolutionSafely(tempFile.absolutePath)
     } finally {
         tempFile.delete()
     }
@@ -155,12 +173,12 @@ fun importAndProcessPhoto(
     val prefs = context.getSharedPreferences("photo_raccord_prefs", Context.MODE_PRIVATE)
     val customTreeUriString = prefs.getString("storage_tree_uri", null)
     val date = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date())
-    val safeProjet = projet.ifBlank { "Projet" }
+    val safeProjet = if (projet.isBlank()) "Projet" else projet
 
     // Decode from a local temporary copy rather than directly from the
     // document-provider stream. This fixes imports from providers for which
     // BitmapFactory cannot reliably decode the selected URI.
-    val bitmap = decodeSelectedImage(context, sourceUri, maxDimension = 1920)
+    val bitmap = decodeSelectedImage(context, sourceUri)
     val finalBitmap = createBanneredBitmap(bitmap, safeProjet, date, decor, sequence)
     val fileName = "IMG_${System.currentTimeMillis()}.jpg"
     var finalUri: Uri?

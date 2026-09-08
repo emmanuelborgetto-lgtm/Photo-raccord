@@ -40,6 +40,9 @@ fun ensureDefaultNomedia(context: Context, showInGallery: Boolean) {
     } catch (e: Exception) { Log.e("CameraUtils", "Erreur gestion .nomedia du dossier par défaut", e) }
 }
 
+// decodeFullResolutionSafely est désormais définie dans FileUtils.kt (même package),
+// et partagée entre la capture caméra et l'import de photos.
+
 fun takeAndProcessPhoto(
     context: Context, imageCapture: ImageCapture, cameraExecutor: Executor,
     coroutineScope: CoroutineScope, photoDao: PhotoDao, projet: String,
@@ -50,7 +53,7 @@ fun takeAndProcessPhoto(
     val customTreeUriString = prefs.getString(PREF_STORAGE_TREE_URI, null)
     val currentDate = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date())
     val mainExecutor = ContextCompat.getMainExecutor(context)
-    val safeProjet = projet.ifBlank { "Projet" }
+    val safeProjet = if (projet.isBlank()) "Projet" else projet
     val resolver = context.contentResolver
     val tempFile = File(context.cacheDir, "temp_capture_${System.currentTimeMillis()}.jpg")
     val outputOptions = ImageCapture.OutputFileOptions.Builder(tempFile).build()
@@ -61,16 +64,12 @@ fun takeAndProcessPhoto(
                 try {
                     val boundsOptions = BitmapFactory.Options().apply { inJustDecodeBounds = true }
                     BitmapFactory.decodeFile(tempFile.absolutePath, boundsOptions)
-                    val srcWidth = boundsOptions.outWidth
-                    val srcHeight = boundsOptions.outHeight
-                    if (srcWidth <= 0 || srcHeight <= 0) throw Exception("Dimensions d'image invalides")
-                    val maxDimension = 1920
-                    val maxSide = maxOf(srcWidth, srcHeight)
-                    val scaleFactor = if (maxSide > maxDimension) (maxSide + maxDimension - 1) / maxDimension else 1
-                    val bitmap = BitmapFactory.decodeFile(tempFile.absolutePath, BitmapFactory.Options().apply {
-                        inSampleSize = scaleFactor
-                        inPreferredConfig = Bitmap.Config.ARGB_8888
-                    }) ?: throw Exception("Échec du décodage du bitmap")
+                    if (boundsOptions.outWidth <= 0 || boundsOptions.outHeight <= 0) throw Exception("Dimensions d'image invalides")
+
+                    // Résolution maximale du capteur : on tente d'abord un décodage en pleine
+                    // résolution. Si la mémoire disponible ne suit pas sur cet appareil précis
+                    // (OutOfMemoryError), on réduit progressivement plutôt que de planter.
+                    val bitmap = decodeFullResolutionSafely(tempFile.absolutePath)
 
                     val finalBitmap = createBanneredBitmap(bitmap, safeProjet, currentDate, decor, sequence)
                     var finalUri: Uri? = null
