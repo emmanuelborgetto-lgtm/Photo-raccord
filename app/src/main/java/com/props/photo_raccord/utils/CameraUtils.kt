@@ -50,7 +50,7 @@ fun takeAndProcessPhoto(
     val customTreeUriString = prefs.getString(PREF_STORAGE_TREE_URI, null)
     val currentDate = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date())
     val mainExecutor = ContextCompat.getMainExecutor(context)
-    val safeProjet = if (projet.isBlank()) "Projet" else projet
+    val safeProjet = projet.ifBlank { "Projet" }
     val resolver = context.contentResolver
     val tempFile = File(context.cacheDir, "temp_capture_${System.currentTimeMillis()}.jpg")
     val outputOptions = ImageCapture.OutputFileOptions.Builder(tempFile).build()

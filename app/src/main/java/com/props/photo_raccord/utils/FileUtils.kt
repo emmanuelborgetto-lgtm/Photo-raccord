@@ -13,6 +13,8 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import androidx.core.graphics.createBitmap
+import com.props.photo_raccord.PhotoEntity
 
 /** Creates a new bitmap with the original photo untouched and the banner appended below it. */
 fun createBanneredBitmap(
@@ -23,11 +25,7 @@ fun createBanneredBitmap(
     sequence: String
 ): Bitmap {
     val bannerHeight = (source.height * 0.08f).toInt().coerceAtLeast(1)
-    val result = Bitmap.createBitmap(
-        source.width,
-        source.height + bannerHeight,
-        Bitmap.Config.ARGB_8888
-    )
+    val result = createBitmap(source.width, source.height + bannerHeight)
     val canvas = Canvas(result)
     canvas.drawBitmap(source, 0f, 0f, null)
     drawInfoBanner(
@@ -157,7 +155,7 @@ fun importAndProcessPhoto(
     val prefs = context.getSharedPreferences("photo_raccord_prefs", Context.MODE_PRIVATE)
     val customTreeUriString = prefs.getString("storage_tree_uri", null)
     val date = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date())
-    val safeProjet = if (projet.isBlank()) "Projet" else projet
+    val safeProjet = projet.ifBlank { "Projet" }
 
     // Decode from a local temporary copy rather than directly from the
     // document-provider stream. This fixes imports from providers for which
@@ -165,7 +163,7 @@ fun importAndProcessPhoto(
     val bitmap = decodeSelectedImage(context, sourceUri, maxDimension = 1920)
     val finalBitmap = createBanneredBitmap(bitmap, safeProjet, date, decor, sequence)
     val fileName = "IMG_${System.currentTimeMillis()}.jpg"
-    var finalUri: Uri? = null
+    var finalUri: Uri?
 
     try {
         if (!customTreeUriString.isNullOrEmpty()) {
@@ -203,7 +201,7 @@ fun importAndProcessPhoto(
     return savedUri.toString() to date
 }
 
-fun deletePhotoFile(context: Context, photo: com.props.photo_raccord.PhotoEntity) {
+fun deletePhotoFile(context: Context, photo: PhotoEntity) {
     try {
         val uri = photo.uri.toUri()
         when (uri.scheme) {
