@@ -39,6 +39,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -61,18 +63,14 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuAnchorType
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -1057,21 +1055,21 @@ private fun EditPhotoDialog(
         mutableStateOf(photo.decor)
     }
 
-    var expandedDecor by remember {
-        mutableStateOf(false)
-    }
-
+    // Suggestions filtrées affichées sous forme de chips, directement dans le contenu du
+    // dialogue : pas de popup superposé, donc pas de risque de recouvrir le champ ou de
+    // faire perdre le focus (et donc fermer le clavier) comme avec l'ancien dropdown.
     val filteredDecors =
         remember(
             decor,
             existingDecors
         ) {
-            existingDecors.filter {
+            if (decor.isBlank()) existingDecors.take(8)
+            else existingDecors.filter {
                 it.contains(
                     decor,
                     ignoreCase = true
                 )
-            }
+            }.take(8)
         }
 
     AlertDialog(
@@ -1105,64 +1103,36 @@ private fun EditPhotoDialog(
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                ExposedDropdownMenuBox(
-                    expanded =
-                        expandedDecor &&
-                                filteredDecors.isNotEmpty(),
+                OutlinedTextField(
+                    value = decor,
+                    onValueChange = {
+                        decor = it
+                    },
+                    label = {
+                        Text(
+                            "Décor",
+                            fontFamily = DM_Mono
+                        )
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
 
-                    onExpandedChange = {
-                        expandedDecor = it
-                    }
-                ) {
-                    OutlinedTextField(
-                        value = decor,
-                        onValueChange = {
-                            decor = it
-                            expandedDecor = true
-                        },
-                        label = {
-                            Text(
-                                "Décor",
-                                fontFamily = DM_Mono
-                            )
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .menuAnchor(
-                                ExposedDropdownMenuAnchorType
-                                    .PrimaryEditable
-                            ),
-                        singleLine = true,
-
-                        trailingIcon = {
-                            ExposedDropdownMenuDefaults
-                                .TrailingIcon(
-                                    expanded =
-                                        expandedDecor
-                                )
-                        }
-                    )
-
-                    DropdownMenu(
-                        expanded =
-                            expandedDecor &&
-                                    filteredDecors.isNotEmpty(),
-
-                        onDismissRequest = {
-                            expandedDecor = false
-                        }
+                if (filteredDecors.isNotEmpty()) {
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        filteredDecors.forEach { item ->
-                            DropdownMenuItem(
-                                text = {
+                        items(filteredDecors) { item ->
+                            SuggestionChip(
+                                onClick = {
+                                    decor = item
+                                },
+                                label = {
                                     Text(
                                         item,
                                         fontFamily = DM_Mono
                                     )
-                                },
-                                onClick = {
-                                    decor = item
-                                    expandedDecor = false
                                 }
                             )
                         }

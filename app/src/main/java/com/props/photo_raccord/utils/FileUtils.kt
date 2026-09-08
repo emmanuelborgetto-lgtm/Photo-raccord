@@ -85,6 +85,10 @@ fun updatePhotoBanner(
             updatedBitmap.compress(Bitmap.CompressFormat.JPEG, 95, out)
         }
 
+        // Mise à jour des métadonnées EXIF avec les nouvelles valeurs de séquence/décor,
+        // pour rester cohérent avec le bandeau visible sur la photo.
+        writePhotoExif(context, uri, projet, newSequence, newDecor)
+
         photoOnly.recycle()
         updatedBitmap.recycle()
         sourceBitmap.recycle()
@@ -190,8 +194,13 @@ fun importAndProcessPhoto(
         finalBitmap.recycle()
     }
 
-    return finalUri?.toString()?.let { it to date }
+    val savedUri = finalUri
         ?: throw IllegalArgumentException("Impossible de créer la photo importée")
+
+    // Écriture des métadonnées EXIF (application, projet, décor, séquence) — best effort.
+    writePhotoExif(context, savedUri, safeProjet, sequence, decor)
+
+    return savedUri.toString() to date
 }
 
 fun deletePhotoFile(context: Context, photo: com.props.photo_raccord.PhotoEntity) {

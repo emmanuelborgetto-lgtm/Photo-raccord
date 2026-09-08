@@ -93,4 +93,7 @@ dependencies {
     implementation(libs.androidx.compose.material.icons.extended)
 
     implementation("androidx.documentfile:documentfile:1.1.0")
+
+    //EXIF
+    implementation("androidx.exifinterface:exifinterface:1.4.2")
 }

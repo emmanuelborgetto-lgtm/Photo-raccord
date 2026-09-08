@@ -119,6 +119,11 @@ fun takeAndProcessPhoto(
                     bitmap.recycle()
                     finalBitmap.recycle()
                     photoDao.insert(PhotoEntity(uri = finalUri.toString(), projet = safeProjet, sequence = sequence, decor = decor, date = currentDate))
+
+                    // Écriture des métadonnées EXIF (application, projet, décor, séquence) — best effort,
+                    // ne doit jamais faire échouer la sauvegarde de la photo elle-même.
+                    writePhotoExif(context, finalUri, safeProjet, sequence, decor)
+
                     if (!showInGallery) {
                         if (!customTreeUriString.isNullOrEmpty()) {
                             try {

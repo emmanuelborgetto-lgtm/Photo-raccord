@@ -25,21 +25,20 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Button
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuAnchorType
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -65,8 +64,13 @@ fun SessionScreen(
     val context = LocalContext.current
     val photoDao = remember { AppDatabase.getDatabase(context).photoDao() }
     val decorsExistants by photoDao.getDistinctDecorsParProjet(projet).collectAsState(initial = emptyList())
-    var expandedDecor by remember { mutableStateOf(false) }
-    val sortedDecors = remember(decor, decorsExistants) { decorsExistants.sortedByDescending { it.contains(decor, ignoreCase = true) } }
+    // Suggestions filtrées (et non plus simplement réordonnées comme avant) : la liste reste
+    // toujours courte, ne recouvre jamais le champ de texte, et n'utilise aucun popup — donc
+    // aucun risque de faire perdre le focus du champ (et donc de fermer le clavier).
+    val filteredDecors = remember(decor, decorsExistants) {
+        if (decor.isBlank()) decorsExistants.take(8)
+        else decorsExistants.filter { it.contains(decor, ignoreCase = true) }.take(8)
+    }
 
     Column(
         modifier = Modifier
@@ -117,46 +121,35 @@ fun SessionScreen(
             }
         )
 
-        // Champ Décor
-        ExposedDropdownMenuBox(
-            expanded = expandedDecor && sortedDecors.isNotEmpty(),
-            onExpandedChange = { expandedDecor = it }
-        ) {
+        // Champ Décor + suggestions sous forme de chips (pas de popup, jamais de recouvrement,
+        // clavier stable même quand la liste des décors existants est longue)
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(
                 value = decor,
-                onValueChange = { newValue ->
-                    onDecorChange(newValue)
-                    expandedDecor = true
-                },
+                onValueChange = onDecorChange,
                 label = { Text("DÉCOR", fontFamily = DM_Mono) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryEditable),
+                modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
                 trailingIcon = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        if (decor.isNotEmpty()) {
-                            IconButton(onClick = { onDecorChange("") }) {
-                                Icon(Icons.Default.Close, contentDescription = "Effacer")
-                            }
+                    if (decor.isNotEmpty()) {
+                        IconButton(onClick = { onDecorChange("") }) {
+                            Icon(Icons.Default.Close, contentDescription = "Effacer")
                         }
-                        ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedDecor)
                     }
                 }
             )
 
-            ExposedDropdownMenu(
-                expanded = expandedDecor && sortedDecors.isNotEmpty(),
-                onDismissRequest = { expandedDecor = false }
-            ) {
-                sortedDecors.forEach { item ->
-                    DropdownMenuItem(
-                        text = { Text(item, fontFamily = DM_Mono) },
-                        onClick = {
-                            onDecorChange(item)
-                            expandedDecor = false
-                        }
-                    )
+            if (filteredDecors.isNotEmpty()) {
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    items(filteredDecors) { item ->
+                        SuggestionChip(
+                            onClick = { onDecorChange(item) },
+                            label = { Text(item, fontFamily = DM_Mono) }
+                        )
+                    }
                 }
             }
         }
