@@ -31,6 +31,25 @@ private const val PREF_SHOW_IN_GALLERY = "show_in_gallery"
 fun getDefaultPhotoDirectory(context: Context): File = File(context.getExternalFilesDir(null) ?: context.filesDir, "PhotoRaccord")
 fun getDefaultPhotoProjectDirectory(context: Context, projet: String): File = File(getDefaultPhotoDirectory(context), projet)
 
+/**
+ * Vérifie que l'application détient toujours une autorisation persistée valide (lecture ET
+ * écriture) sur ce dossier SAF.
+ *
+ * Une préférence "storage_tree_uri" peut exister sans que l'autorisation associée soit
+ * encore valable : c'est le cas après une désinstallation/réinstallation si les préférences
+ * ont été restaurées par la sauvegarde automatique d'Android (allowBackup), car les
+ * autorisations persistées, elles, sont toujours révoquées par le système à la
+ * désinstallation et ne sont jamais restaurées par la sauvegarde. Sans cette vérification,
+ * l'application tenterait d'écrire dans un dossier dont elle n'a en réalité plus le droit
+ * d'accès.
+ */
+fun hasValidTreePermission(context: Context, treeUriString: String): Boolean {
+    val treeUri = treeUriString.toUri()
+    return context.contentResolver.persistedUriPermissions.any {
+        it.uri == treeUri && it.isReadPermission && it.isWritePermission
+    }
+}
+
 fun ensureDefaultNomedia(context: Context, showInGallery: Boolean) {
     try {
         val directory = getDefaultPhotoDirectory(context)
@@ -76,16 +95,28 @@ fun takeAndProcessPhoto(
                     var pending = false
                     val fileName = "IMG_${System.currentTimeMillis()}.jpg"
 
-                    if (!customTreeUriString.isNullOrEmpty()) {
+                    // Le dossier personnalisé peut être configuré (storage_tree_uri) sans que
+                    // l'autorisation SAF associée soit encore valide (voir hasValidTreePermission).
+                    // On le traite alors comme s'il n'était pas configuré, et on nettoie la
+                    // préférence obsolète pour que les Paramètres reflètent la réalité.
+                    val useCustomTree = !customTreeUriString.isNullOrEmpty() &&
+                            hasValidTreePermission(context, customTreeUriString)
+
+                    if (!customTreeUriString.isNullOrEmpty() && !useCustomTree) {
+                        Log.w("CameraUtils", "Permission perdue sur le dossier configuré, retour au stockage par défaut")
+                        prefs.edit().remove(PREF_STORAGE_TREE_URI).apply()
+                    }
+
+                    if (useCustomTree) {
                         try {
-                            val rootDir = DocumentFile.fromTreeUri(context, customTreeUriString.toUri())
+                            val rootDir = DocumentFile.fromTreeUri(context, customTreeUriString!!.toUri())
                             var projectDir = rootDir?.findFile(safeProjet)
                             if (projectDir == null) projectDir = rootDir?.createDirectory(safeProjet)
                             finalUri = projectDir?.createFile("image/jpeg", fileName)?.uri
                         } catch (e: Exception) { Log.e("CameraUtils", "Erreur SAF", e) }
                     }
 
-                    if (finalUri == null && customTreeUriString.isNullOrEmpty()) {
+                    if (finalUri == null && !useCustomTree) {
                         val projectDir = getDefaultPhotoProjectDirectory(context, safeProjet)
                         if (!projectDir.exists() && !projectDir.mkdirs()) throw Exception("Impossible de créer le dossier $safeProjet")
                         val outputFile = File(projectDir, fileName)
@@ -124,9 +155,9 @@ fun takeAndProcessPhoto(
                     writePhotoExif(context, finalUri, safeProjet, sequence, decor)
 
                     if (!showInGallery) {
-                        if (!customTreeUriString.isNullOrEmpty()) {
+                        if (useCustomTree) {
                             try {
-                                val rootDir = DocumentFile.fromTreeUri(context, customTreeUriString.toUri())
+                                val rootDir = DocumentFile.fromTreeUri(context, customTreeUriString!!.toUri())
                                 if (rootDir != null && rootDir.findFile(".nomedia") == null) rootDir.createFile("application/octet-stream", ".nomedia")
                             } catch (e: Exception) { Log.e("CameraUtils", "Erreur création .nomedia SAF", e) }
                         } else ensureDefaultNomedia(context, false)

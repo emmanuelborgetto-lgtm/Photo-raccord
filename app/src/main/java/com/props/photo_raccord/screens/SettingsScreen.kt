@@ -144,14 +144,33 @@ fun SettingsScreen(onThemeChanged: (String) -> Unit, onProjetRenamed: (String, S
                     isCleaning = true
                     scope.launch(Dispatchers.IO) {
                         val allPhotos = photoDao.getAllPhotosOnce()
+                        var skippedForPermission = 0
                         val orphans = allPhotos.filter { photo ->
-                            try { context.contentResolver.openInputStream(photo.uri.toUri())?.use { true } ?: false; false }
-                            catch (_: Exception) { true }
+                            try {
+                                context.contentResolver.openInputStream(photo.uri.toUri())?.use { true } ?: false
+                                false
+                            } catch (_: SecurityException) {
+                                // Permission perdue sur le dossier contenant cette photo (ex :
+                                // dossier SAF dont l'autorisation a été révoquée après une
+                                // réinstallation de l'application) : impossible de savoir si le
+                                // fichier existe encore réellement. On ne la supprime donc pas,
+                                // pour éviter de perdre à tort une référence valide.
+                                skippedForPermission++
+                                false
+                            } catch (_: Exception) {
+                                true
+                            }
                         }
                         if (orphans.isNotEmpty()) photoDao.deletePhotos(orphans)
                         withContext(Dispatchers.Main) {
                             isCleaning = false
-                            Toast.makeText(context, "${orphans.size} référence(s) orpheline(s) supprimée(s)", Toast.LENGTH_SHORT).show()
+                            val message = buildString {
+                                append("${orphans.size} référence(s) orpheline(s) supprimée(s)")
+                                if (skippedForPermission > 0) {
+                                    append(" — $skippedForPermission photo(s) non vérifiée(s) (dossier inaccessible)")
+                                }
+                            }
+                            Toast.makeText(context, message, Toast.LENGTH_LONG).show()
                         }
                     }
                 }, enabled = !isCleaning, modifier = Modifier.fillMaxWidth()) {

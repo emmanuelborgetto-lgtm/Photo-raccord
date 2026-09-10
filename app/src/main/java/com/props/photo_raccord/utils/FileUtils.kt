@@ -9,7 +9,6 @@ import android.provider.DocumentsContract
 import android.util.Log
 import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
-import com.props.photo_raccord.PhotoEntity
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -175,17 +174,31 @@ fun importAndProcessPhoto(
     val date = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date())
     val safeProjet = if (projet.isBlank()) "Projet" else projet
 
+    // Le dossier personnalisé peut être configuré (storage_tree_uri) sans que l'autorisation
+    // SAF associée soit encore valide (voir hasValidTreePermission) — par exemple après une
+    // désinstallation/réinstallation de l'application si les préférences ont été restaurées
+    // par la sauvegarde automatique d'Android. Sans cette vérification, l'import échouait
+    // avec une erreur de permission brute au lieu de basculer sur le stockage par défaut,
+    // contrairement à la capture qui avait déjà ce repli.
+    val useCustomTree = !customTreeUriString.isNullOrEmpty() &&
+            hasValidTreePermission(context, customTreeUriString)
+
+    if (!customTreeUriString.isNullOrEmpty() && !useCustomTree) {
+        Log.w("FileUtils", "Permission perdue sur le dossier configuré, retour au stockage par défaut")
+        prefs.edit().remove("storage_tree_uri").apply()
+    }
+
     // Decode from a local temporary copy rather than directly from the
     // document-provider stream. This fixes imports from providers for which
     // BitmapFactory cannot reliably decode the selected URI.
     val bitmap = decodeSelectedImage(context, sourceUri)
     val finalBitmap = createBanneredBitmap(bitmap, safeProjet, date, decor, sequence)
     val fileName = "IMG_${System.currentTimeMillis()}.jpg"
-    var finalUri: Uri?
+    var finalUri: Uri? = null
 
     try {
-        if (!customTreeUriString.isNullOrEmpty()) {
-            val rootDir = DocumentFile.fromTreeUri(context, customTreeUriString.toUri())
+        if (useCustomTree) {
+            val rootDir = DocumentFile.fromTreeUri(context, customTreeUriString!!.toUri())
                 ?: throw IllegalArgumentException("Dossier de stockage inaccessible")
             var projectDir = rootDir.findFile(safeProjet)
             if (projectDir == null) projectDir = rootDir.createDirectory(safeProjet)
@@ -219,7 +232,7 @@ fun importAndProcessPhoto(
     return savedUri.toString() to date
 }
 
-fun deletePhotoFile(context: Context, photo: PhotoEntity) {
+fun deletePhotoFile(context: Context, photo: com.props.photo_raccord.PhotoEntity) {
     try {
         val uri = photo.uri.toUri()
         when (uri.scheme) {
