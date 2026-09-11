@@ -171,7 +171,8 @@ fun importAndProcessPhoto(
 ): Pair<String, String> {
     val prefs = context.getSharedPreferences("photo_raccord_prefs", Context.MODE_PRIVATE)
     val customTreeUriString = prefs.getString("storage_tree_uri", null)
-    val date = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date())
+    val importDate = Date()
+    val date = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(importDate)
     val safeProjet = if (projet.isBlank()) "Projet" else projet
 
     // Le dossier personnalisé peut être configuré (storage_tree_uri) sans que l'autorisation
@@ -193,7 +194,6 @@ fun importAndProcessPhoto(
     // BitmapFactory cannot reliably decode the selected URI.
     val bitmap = decodeSelectedImage(context, sourceUri)
     val finalBitmap = createBanneredBitmap(bitmap, safeProjet, date, decor, sequence)
-    val fileName = "IMG_${System.currentTimeMillis()}.jpg"
     var finalUri: Uri? = null
 
     try {
@@ -202,6 +202,9 @@ fun importAndProcessPhoto(
                 ?: throw IllegalArgumentException("Dossier de stockage inaccessible")
             var projectDir = rootDir.findFile(safeProjet)
             if (projectDir == null) projectDir = rootDir.createDirectory(safeProjet)
+            val fileName = buildUniquePhotoFileName(safeProjet, decor, sequence, importDate) { candidate ->
+                projectDir?.findFile(candidate) != null
+            }
             finalUri = projectDir?.createFile("image/jpeg", fileName)?.uri
                 ?: throw IllegalArgumentException("Impossible de créer le fichier dans le dossier du projet")
             context.contentResolver.openOutputStream(finalUri)?.use { out ->
@@ -211,6 +214,9 @@ fun importAndProcessPhoto(
             val projectDir = getDefaultPhotoProjectDirectory(context, safeProjet)
             if (!projectDir.exists() && !projectDir.mkdirs()) {
                 throw IllegalArgumentException("Impossible de créer le dossier du projet")
+            }
+            val fileName = buildUniquePhotoFileName(safeProjet, decor, sequence, importDate) { candidate ->
+                File(projectDir, candidate).exists()
             }
             val outputFile = File(projectDir, fileName)
             outputFile.outputStream().use {

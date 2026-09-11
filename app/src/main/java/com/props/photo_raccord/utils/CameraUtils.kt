@@ -70,7 +70,8 @@ fun takeAndProcessPhoto(
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     val showInGallery = prefs.getBoolean(PREF_SHOW_IN_GALLERY, false)
     val customTreeUriString = prefs.getString(PREF_STORAGE_TREE_URI, null)
-    val currentDate = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date())
+    val captureDate = Date()
+    val currentDate = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(captureDate)
     val mainExecutor = ContextCompat.getMainExecutor(context)
     val safeProjet = if (projet.isBlank()) "Projet" else projet
     val resolver = context.contentResolver
@@ -93,7 +94,6 @@ fun takeAndProcessPhoto(
                     val finalBitmap = createBanneredBitmap(bitmap, safeProjet, currentDate, decor, sequence)
                     var finalUri: Uri? = null
                     var pending = false
-                    val fileName = "IMG_${System.currentTimeMillis()}.jpg"
 
                     // Le dossier personnalisé peut être configuré (storage_tree_uri) sans que
                     // l'autorisation SAF associée soit encore valide (voir hasValidTreePermission).
@@ -112,6 +112,9 @@ fun takeAndProcessPhoto(
                             val rootDir = DocumentFile.fromTreeUri(context, customTreeUriString!!.toUri())
                             var projectDir = rootDir?.findFile(safeProjet)
                             if (projectDir == null) projectDir = rootDir?.createDirectory(safeProjet)
+                            val fileName = buildUniquePhotoFileName(safeProjet, decor, sequence, captureDate) { candidate ->
+                                projectDir?.findFile(candidate) != null
+                            }
                             finalUri = projectDir?.createFile("image/jpeg", fileName)?.uri
                         } catch (e: Exception) { Log.e("CameraUtils", "Erreur SAF", e) }
                     }
@@ -119,12 +122,19 @@ fun takeAndProcessPhoto(
                     if (finalUri == null && !useCustomTree) {
                         val projectDir = getDefaultPhotoProjectDirectory(context, safeProjet)
                         if (!projectDir.exists() && !projectDir.mkdirs()) throw Exception("Impossible de créer le dossier $safeProjet")
+                        val fileName = buildUniquePhotoFileName(safeProjet, decor, sequence, captureDate) { candidate ->
+                            File(projectDir, candidate).exists()
+                        }
                         val outputFile = File(projectDir, fileName)
                         outputFile.outputStream().use { finalBitmap.compress(Bitmap.CompressFormat.JPEG, 90, it) }
                         finalUri = Uri.fromFile(outputFile)
                     }
 
                     if (finalUri == null) {
+                        // MediaStore désambiguïse déjà automatiquement les noms en doublon au
+                        // sein d'un même RELATIVE_PATH ; pas besoin d'une vérification manuelle
+                        // supplémentaire ici (cas de repli, rarement atteint).
+                        val fileName = buildUniquePhotoFileName(safeProjet, decor, sequence, captureDate)
                         val values = ContentValues().apply {
                             put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
                             put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
