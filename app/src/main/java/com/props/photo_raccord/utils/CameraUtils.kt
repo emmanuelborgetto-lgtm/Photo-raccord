@@ -50,6 +50,39 @@ fun hasValidTreePermission(context: Context, treeUriString: String): Boolean {
     }
 }
 
+/** État réel du dossier de stockage personnalisé, au-delà de la simple préférence enregistrée. */
+sealed class StorageStatus {
+    /** Aucun dossier personnalisé configuré : stockage privé par défaut utilisé. */
+    object Default : StorageStatus()
+    /** Dossier personnalisé configuré et pleinement accessible. */
+    object Ok : StorageStatus()
+    /** Autorisation SAF perdue (ex : réinstallation de l'application, voir [hasValidTreePermission]). */
+    object PermissionLost : StorageStatus()
+    /** Autorisation valide, mais dossier introuvable (supprimé, déplacé, carte SD retirée...). */
+    object FolderMissing : StorageStatus()
+}
+
+/**
+ * Détermine l'état réel du dossier de stockage personnalisé configuré.
+ *
+ * Va au-delà de [hasValidTreePermission] : une autorisation SAF peut rester techniquement
+ * valide alors que le dossier lui-même a été supprimé, déplacé, ou rendu indisponible (carte
+ * SD retirée). Cette fonction vérifie donc à la fois l'autorisation ET l'existence physique
+ * du dossier, pour permettre de distinguer les deux cas et d'agir en conséquence (repli sur
+ * le stockage par défaut, proposition de resélection dans l'interface...).
+ */
+fun checkStorageAccess(context: Context, treeUriString: String?): StorageStatus {
+    if (treeUriString.isNullOrEmpty()) return StorageStatus.Default
+    if (!hasValidTreePermission(context, treeUriString)) return StorageStatus.PermissionLost
+    return try {
+        val dir = DocumentFile.fromTreeUri(context, treeUriString.toUri())
+        if (dir != null && dir.exists() && dir.canWrite()) StorageStatus.Ok
+        else StorageStatus.FolderMissing
+    } catch (e: Exception) {
+        StorageStatus.FolderMissing
+    }
+}
+
 fun ensureDefaultNomedia(context: Context, showInGallery: Boolean) {
     try {
         val directory = getDefaultPhotoDirectory(context)
@@ -95,15 +128,16 @@ fun takeAndProcessPhoto(
                     var finalUri: Uri? = null
                     var pending = false
 
-                    // Le dossier personnalisé peut être configuré (storage_tree_uri) sans que
-                    // l'autorisation SAF associée soit encore valide (voir hasValidTreePermission).
-                    // On le traite alors comme s'il n'était pas configuré, et on nettoie la
-                    // préférence obsolète pour que les Paramètres reflètent la réalité.
-                    val useCustomTree = !customTreeUriString.isNullOrEmpty() &&
-                            hasValidTreePermission(context, customTreeUriString)
+                    // Le dossier personnalisé peut être configuré (storage_tree_uri) sans être
+                    // réellement utilisable : autorisation SAF perdue OU dossier supprimé/déplacé/
+                    // indisponible (voir checkStorageAccess). Dans les deux cas, on retombe sur le
+                    // stockage par défaut et on nettoie la préférence obsolète pour que les
+                    // Paramètres reflètent la réalité.
+                    val storageStatus = checkStorageAccess(context, customTreeUriString)
+                    val useCustomTree = storageStatus == StorageStatus.Ok
 
-                    if (!customTreeUriString.isNullOrEmpty() && !useCustomTree) {
-                        Log.w("CameraUtils", "Permission perdue sur le dossier configuré, retour au stockage par défaut")
+                    if (storageStatus == StorageStatus.PermissionLost || storageStatus == StorageStatus.FolderMissing) {
+                        Log.w("CameraUtils", "Dossier configuré inutilisable ($storageStatus), retour au stockage par défaut")
                         prefs.edit().remove(PREF_STORAGE_TREE_URI).apply()
                     }
 

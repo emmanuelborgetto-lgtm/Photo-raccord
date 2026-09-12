@@ -17,6 +17,7 @@
  */
 package com.props.photo_raccord.screens
 
+import android.content.Context
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -39,11 +40,16 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SuggestionChip
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -51,13 +57,18 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.props.photo_raccord.AppDatabase
 import com.props.photo_raccord.DM_Mono
+import com.props.photo_raccord.utils.StorageStatus
+import com.props.photo_raccord.utils.checkStorageAccess
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SessionScreen(
     projet: String, sequence: String, decor: String,
     onSequenceChange: (String) -> Unit, onDecorChange: (String) -> Unit,
-    onStartCamera: () -> Unit, onOpenGallery: () -> Unit, onBackToProjects: () -> Unit
+    onStartCamera: () -> Unit, onOpenGallery: () -> Unit, onBackToProjects: () -> Unit,
+    onOpenSettings: () -> Unit
 ) {
     val context = LocalContext.current
     val photoDao = remember { AppDatabase.getDatabase(context).photoDao() }
@@ -68,6 +79,16 @@ fun SessionScreen(
     val filteredDecors = remember(decor, decorsExistants) {
         if (decor.isBlank()) decorsExistants.take(8)
         else decorsExistants.filter { it.contains(decor, ignoreCase = true) }.take(8)
+    }
+
+    // Vérification du dossier de stockage dès l'ouverture de cet écran, qui est le premier
+    // écran significatif affiché après un redémarrage de l'application (projet déjà
+    // sélectionné). Permet de prévenir avant même d'ouvrir l'appareil photo.
+    var storageStatus by remember { mutableStateOf<StorageStatus>(StorageStatus.Default) }
+    LaunchedEffect(Unit) {
+        val prefs = context.getSharedPreferences("photo_raccord_prefs", Context.MODE_PRIVATE)
+        val customTreeUri = prefs.getString("storage_tree_uri", null)
+        storageStatus = withContext(Dispatchers.IO) { checkStorageAccess(context, customTreeUri) }
     }
 
     Column(
@@ -102,6 +123,30 @@ fun SessionScreen(
         }
 
         HorizontalDivider()
+
+        if (storageStatus is StorageStatus.PermissionLost || storageStatus is StorageStatus.FolderMissing) {
+            Surface(
+                color = MaterialTheme.colorScheme.errorContainer,
+                shape = MaterialTheme.shapes.small,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        "Dossier de stockage inaccessible",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                        modifier = Modifier.weight(1f)
+                    )
+                    TextButton(onClick = onOpenSettings) {
+                        Text("Paramètres", fontFamily = DM_Mono)
+                    }
+                }
+            }
+        }
 
         // Champ Séquence
         OutlinedTextField(

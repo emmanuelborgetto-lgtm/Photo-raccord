@@ -104,7 +104,8 @@ fun AppNavigation(onThemeChanged: (String) -> Unit) {
             onDecorChange = { decor = it },
             onStartCamera = { currentScreen = Screen.CAMERA },
             onOpenGallery = { currentScreen = Screen.GALLERY },
-            onBackToProjects = { currentScreen = Screen.PROJECT }
+            onBackToProjects = { currentScreen = Screen.PROJECT },
+            onOpenSettings = { currentScreen = Screen.SETTINGS }
         )
         Screen.CAMERA -> CameraScreen(
             projet = projet,

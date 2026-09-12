@@ -175,17 +175,16 @@ fun importAndProcessPhoto(
     val date = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(importDate)
     val safeProjet = if (projet.isBlank()) "Projet" else projet
 
-    // Le dossier personnalisé peut être configuré (storage_tree_uri) sans que l'autorisation
-    // SAF associée soit encore valide (voir hasValidTreePermission) — par exemple après une
-    // désinstallation/réinstallation de l'application si les préférences ont été restaurées
-    // par la sauvegarde automatique d'Android. Sans cette vérification, l'import échouait
-    // avec une erreur de permission brute au lieu de basculer sur le stockage par défaut,
-    // contrairement à la capture qui avait déjà ce repli.
-    val useCustomTree = !customTreeUriString.isNullOrEmpty() &&
-            hasValidTreePermission(context, customTreeUriString)
+    // Le dossier personnalisé peut être configuré (storage_tree_uri) sans être réellement
+    // utilisable : autorisation SAF perdue OU dossier supprimé/déplacé/indisponible (voir
+    // checkStorageAccess). Auparavant, seule la permission était vérifiée : un dossier
+    // physiquement supprimé mais avec une autorisation encore valide faisait planter
+    // l'import avec une erreur brute au lieu de basculer sur le stockage par défaut.
+    val storageStatus = checkStorageAccess(context, customTreeUriString)
+    val useCustomTree = storageStatus == StorageStatus.Ok
 
-    if (!customTreeUriString.isNullOrEmpty() && !useCustomTree) {
-        Log.w("FileUtils", "Permission perdue sur le dossier configuré, retour au stockage par défaut")
+    if (storageStatus == StorageStatus.PermissionLost || storageStatus == StorageStatus.FolderMissing) {
+        Log.w("FileUtils", "Dossier configuré inutilisable ($storageStatus), retour au stockage par défaut")
         prefs.edit().remove("storage_tree_uri").apply()
     }
 

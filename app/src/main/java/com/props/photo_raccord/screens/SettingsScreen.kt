@@ -30,6 +30,8 @@ import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
 import com.props.photo_raccord.AppDatabase
 import com.props.photo_raccord.DM_Mono
+import com.props.photo_raccord.utils.StorageStatus
+import com.props.photo_raccord.utils.checkStorageAccess
 import com.props.photo_raccord.utils.ensureDefaultNomedia
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -49,6 +51,15 @@ fun SettingsScreen(onThemeChanged: (String) -> Unit, onProjetRenamed: (String, S
     var showInGallery by remember { mutableStateOf(prefs.getBoolean(PREF_SHOW_IN_GALLERY, true)) }
     var showDcimWarning by remember { mutableStateOf(false) }
     var pendingFolderUri by remember { mutableStateOf<Uri?>(null) }
+    var storageStatus by remember { mutableStateOf<StorageStatus>(StorageStatus.Default) }
+
+    // Vérification proactive : à chaque ouverture des Paramètres (et à chaque changement de
+    // dossier), on vérifie que le dossier configuré est réellement utilisable — pas juste
+    // que la préférence existe. Couvre à la fois la perte de permission (réinstallation) et
+    // la suppression/déplacement physique du dossier (carte SD retirée, etc.).
+    LaunchedEffect(customTreeUri) {
+        storageStatus = withContext(Dispatchers.IO) { checkStorageAccess(context, customTreeUri) }
+    }
 
     val folderPickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         uri?.let { selectedUri ->
@@ -108,6 +119,33 @@ fun SettingsScreen(onThemeChanged: (String) -> Unit, onProjetRenamed: (String, S
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         val displayFolder = customTreeUri?.let { getDisplayFolderPath(it) } ?: "PhotoRaccord (stockage privé)"
                         Text("Dossier actuel : $displayFolder", style = MaterialTheme.typography.bodyMedium)
+
+                        val status = storageStatus
+                        if (status is StorageStatus.PermissionLost || status is StorageStatus.FolderMissing) {
+                            Surface(
+                                color = MaterialTheme.colorScheme.errorContainer,
+                                shape = MaterialTheme.shapes.small,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    val message = if (status is StorageStatus.PermissionLost) {
+                                        "L'autorisation d'accès à ce dossier a été perdue (par exemple après une réinstallation de l'application). Les nouvelles photos sont enregistrées dans le stockage par défaut en attendant."
+                                    } else {
+                                        "Ce dossier semble avoir été supprimé, déplacé, ou n'est plus disponible (carte SD retirée ?). Les nouvelles photos sont enregistrées dans le stockage par défaut en attendant."
+                                    }
+                                    Text(message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onErrorContainer)
+                                    Button(
+                                        onClick = { folderPickerLauncher.launch(null) },
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = MaterialTheme.colorScheme.error,
+                                            contentColor = MaterialTheme.colorScheme.onError
+                                        ),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) { Text("Choisir un nouveau dossier") }
+                                }
+                            }
+                        }
+
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                             OutlinedButton(onClick = { folderPickerLauncher.launch(null) }, Modifier.weight(1f)) { Text("Changer le dossier") }
                             if (!customTreeUri.isNullOrEmpty()) IconButton(onClick = { resetToDefault() }) { Icon(Icons.Default.Close, "Réinitialiser") }

@@ -50,6 +50,18 @@ android {
     }
 }
 
+// Renomme l'APK généré : Photo-raccord-v<version>-<debug|release>.apk
+// Bloc séparé de android{} : depuis AGP 9, l'ancienne API applicationVariants a été retirée
+// du DSL au profit de androidComponents/onVariants (API Variant v2).
+androidComponents {
+    onVariants { variant ->
+        variant.outputs.forEach { output ->
+            val versionName = output.versionName.orNull ?: "dev"
+            output.outputFileName.set("Photo-raccord-v$versionName-${variant.buildType}.apk")
+        }
+    }
+}
+
 dependencies {
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)

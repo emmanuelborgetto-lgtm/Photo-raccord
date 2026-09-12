@@ -53,6 +53,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.ArrowDropUp
+import androidx.compose.material.icons.filled.BrokenImage
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
@@ -90,6 +91,7 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
@@ -662,6 +664,7 @@ private fun PhotoCard(
                     .crossfade(true)
                     .build(),
                 contentDescription = "Raccord ${photo.sequence}",
+                error = rememberVectorPainter(Icons.Default.BrokenImage),
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(cardHeight - bannerHeight)
@@ -1262,6 +1265,8 @@ private fun ZoomableImage(
             .build(),
 
         contentDescription = null,
+
+        error = rememberVectorPainter(Icons.Default.BrokenImage),
 
         contentScale = ContentScale.Fit,
 
