@@ -4,15 +4,20 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
+import android.graphics.Matrix
 import android.net.Uri
 import android.provider.DocumentsContract
 import android.util.Log
 import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
+import androidx.exifinterface.media.ExifInterface
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import androidx.core.graphics.createBitmap
+import androidx.core.content.edit
+import com.props.photo_raccord.PhotoEntity
 
 /**
  * Décode une image en tentant d'abord sa pleine résolution d'origine — que ce soit une
@@ -20,6 +25,11 @@ import java.util.Locale
  * d'origine du fichier). Aucune réduction n'est appliquée par défaut. Si la mémoire
  * disponible ne suit pas sur cet appareil précis (OutOfMemoryError), réduit progressivement
  * plutôt que de faire planter l'application.
+ *
+ * Applique aussi la rotation indiquée par le tag EXIF Orientation du fichier source (voir
+ * [applyExifRotation]) avant de retourner le bitmap, pour que le bandeau — toujours dessiné
+ * après cet appel par les fonctions appelantes — soit posé sur une image déjà correctement
+ * orientée.
  */
 fun decodeFullResolutionSafely(path: String): Bitmap {
     var sampleSize = 1
@@ -30,8 +40,9 @@ fun decodeFullResolutionSafely(path: String): Bitmap {
                 inSampleSize = sampleSize
                 inPreferredConfig = Bitmap.Config.ARGB_8888
             }
-            return BitmapFactory.decodeFile(path, options)
+            val bitmap = BitmapFactory.decodeFile(path, options)
                 ?: throw IllegalArgumentException("Échec du décodage du bitmap")
+            return applyExifRotation(bitmap, path)
         } catch (e: OutOfMemoryError) {
             lastError = e
             System.gc()
@@ -39,6 +50,31 @@ fun decodeFullResolutionSafely(path: String): Bitmap {
         }
     }
     throw lastError ?: IllegalArgumentException("Mémoire insuffisante pour traiter cette image")
+}
+
+/**
+ * Applique la rotation indiquée par le tag EXIF Orientation du fichier source.
+ *
+ * BitmapFactory ignore ce tag lors du décodage : sans cette étape, une photo prise portrait
+ * (CameraX n'écrit que le tag EXIF, il ne pivote pas les pixels), ou importée depuis un autre
+ * téléphone ou un appareil photo qui fait de même, ressortirait couchée — avec le bandeau
+ * posé du mauvais côté puisqu'il est dessiné après coup sur les pixels tels que décodés.
+ *
+ * Ne fait rien (retourne le bitmap tel quel, sans allocation supplémentaire) si aucune
+ * rotation n'est nécessaire — le cas le plus courant (paysage, ou source déjà correctement
+ * orientée).
+ */
+private fun applyExifRotation(bitmap: Bitmap, path: String): Bitmap {
+    val rotation = try {
+        ExifInterface(path).rotationDegrees
+    } catch (_: Exception) {
+        0
+    }
+    if (rotation == 0) return bitmap
+    val matrix = Matrix().apply { postRotate(rotation.toFloat()) }
+    val rotated = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+    if (rotated !== bitmap) bitmap.recycle()
+    return rotated
 }
 
 /** Creates a new bitmap with the original photo untouched and the banner appended below it. */
@@ -50,11 +86,7 @@ fun createBanneredBitmap(
     sequence: String
 ): Bitmap {
     val bannerHeight = (source.height * 0.08f).toInt().coerceAtLeast(1)
-    val result = Bitmap.createBitmap(
-        source.width,
-        source.height + bannerHeight,
-        Bitmap.Config.ARGB_8888
-    )
+    val result = createBitmap(source.width, source.height + bannerHeight)
     val canvas = Canvas(result)
     canvas.drawBitmap(source, 0f, 0f, null)
     drawInfoBanner(
@@ -173,7 +205,7 @@ fun importAndProcessPhoto(
     val customTreeUriString = prefs.getString("storage_tree_uri", null)
     val importDate = Date()
     val date = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(importDate)
-    val safeProjet = if (projet.isBlank()) "Projet" else projet
+    val safeProjet = projet.ifBlank { "Projet" }
 
     // Le dossier personnalisé peut être configuré (storage_tree_uri) sans être réellement
     // utilisable : autorisation SAF perdue OU dossier supprimé/déplacé/indisponible (voir
@@ -185,7 +217,7 @@ fun importAndProcessPhoto(
 
     if (storageStatus == StorageStatus.PermissionLost || storageStatus == StorageStatus.FolderMissing) {
         Log.w("FileUtils", "Dossier configuré inutilisable ($storageStatus), retour au stockage par défaut")
-        prefs.edit().remove("storage_tree_uri").apply()
+        prefs.edit { remove("storage_tree_uri") }
     }
 
     // Decode from a local temporary copy rather than directly from the
@@ -193,7 +225,7 @@ fun importAndProcessPhoto(
     // BitmapFactory cannot reliably decode the selected URI.
     val bitmap = decodeSelectedImage(context, sourceUri)
     val finalBitmap = createBanneredBitmap(bitmap, safeProjet, date, decor, sequence)
-    var finalUri: Uri? = null
+    var finalUri: Uri?
 
     try {
         if (useCustomTree) {
@@ -237,7 +269,7 @@ fun importAndProcessPhoto(
     return savedUri.toString() to date
 }
 
-fun deletePhotoFile(context: Context, photo: com.props.photo_raccord.PhotoEntity) {
+fun deletePhotoFile(context: Context, photo: PhotoEntity) {
     try {
         val uri = photo.uri.toUri()
         when (uri.scheme) {

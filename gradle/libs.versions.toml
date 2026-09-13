@@ -15,9 +15,9 @@ activityCompose = "1.13.0"
 kotlin = "2.4.20"
 ksp = "2.3.10"
 materialIconsCore = "1.7.8"
-navigationCompose = "2.10.0"
-room = "2.8.4"
-composeBom = "2026.08.00"
+navigationCompose = "2.10.1"
+room = "2.8.5"
+composeBom = "2026.09.00"
 
 [libraries]
 accompanist-permissions = { module = "com.google.accompanist:accompanist-permissions", version.ref = "accompanistPermissions" }

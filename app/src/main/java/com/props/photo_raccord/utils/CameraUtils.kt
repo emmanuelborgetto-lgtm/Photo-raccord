@@ -23,6 +23,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.concurrent.Executor
+import androidx.core.content.edit
 
 private const val PREFS_NAME = "photo_raccord_prefs"
 private const val PREF_STORAGE_TREE_URI = "storage_tree_uri"
@@ -106,7 +107,7 @@ fun takeAndProcessPhoto(
     val captureDate = Date()
     val currentDate = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(captureDate)
     val mainExecutor = ContextCompat.getMainExecutor(context)
-    val safeProjet = if (projet.isBlank()) "Projet" else projet
+    val safeProjet = projet.ifBlank { "Projet" }
     val resolver = context.contentResolver
     val tempFile = File(context.cacheDir, "temp_capture_${System.currentTimeMillis()}.jpg")
     val outputOptions = ImageCapture.OutputFileOptions.Builder(tempFile).build()
@@ -138,7 +139,7 @@ fun takeAndProcessPhoto(
 
                     if (storageStatus == StorageStatus.PermissionLost || storageStatus == StorageStatus.FolderMissing) {
                         Log.w("CameraUtils", "Dossier configuré inutilisable ($storageStatus), retour au stockage par défaut")
-                        prefs.edit().remove(PREF_STORAGE_TREE_URI).apply()
+                        prefs.edit { remove(PREF_STORAGE_TREE_URI) }
                     }
 
                     if (useCustomTree) {

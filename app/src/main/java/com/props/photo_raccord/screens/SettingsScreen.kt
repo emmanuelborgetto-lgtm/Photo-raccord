@@ -230,7 +230,7 @@ fun SettingsScreen(onThemeChanged: (String) -> Unit, onProjetRenamed: (String, S
             title = { Text("Attention : dossier DCIM") },
             text = { Text("Vous avez sélectionné le dossier DCIM. Le masquage des photos dans la galerie ne fonctionnera pas de manière fiable dans ce dossier. Pour masquer efficacement les photos, choisissez plutôt le dossier PhotoRaccord proposé par défaut.") },
             confirmButton = { TextButton(onClick = {
-                pendingFolderUri?.let { applySelectedFolderAsync(context, prefs, it, showInGallery, scope) { customTreeUri = it } }
+                pendingFolderUri?.let { applySelectedFolderAsync(context, prefs, it, showInGallery, scope) { it -> customTreeUri = it } }
                 showDcimWarning = false; pendingFolderUri = null
             }) { Text("Utiliser quand même") } },
             dismissButton = { TextButton(onClick = { showDcimWarning = false; pendingFolderUri = null }) { Text("Annuler") } }
